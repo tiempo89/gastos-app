@@ -1,0 +1,644 @@
+import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:open_file/open_file.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:pdf/widgets.dart' as pw;
+import '../models/movement.dart';
+
+enum Ordenamiento {
+  fechaDescendente,
+  fechaAscendente,
+  alfabeticoAscendente,
+  alfabeticoDescendente,
+  montoAscendente,
+  montoDescendente
+}
+
+enum FiltroTipo { todos, efectivo, digital }
+
+enum FiltroOperacion { todos, ingresos, egresos }
+
+enum FiltroPeriodo { todo, hoy, esteMes, esteAnio }
+
+class BalanceProvider with ChangeNotifier {
+  late Box<Movement> _cajaMovimientos;
+  late Box<double> _cajaSaldos;
+  late Box _cajaConfiguracion;
+  late Box<String> _cajaPerfiles;
+
+  // Filtros
+  FiltroTipo _filtroTipo = FiltroTipo.todos;
+  FiltroOperacion _filtroOperacion = FiltroOperacion.todos;
+  FiltroPeriodo _filtroPeriodo = FiltroPeriodo.todo;
+  DateTime? _fechaInicio;
+  DateTime? _fechaFin;
+
+  String _perfilActual = '';
+  List<String> _perfiles = [];
+
+  double _saldoInicialEfectivo = 0.0;
+  double _saldoInicialDigital = 0.0;
+  bool _esModoOscuro = false;
+  Ordenamiento _ordenamiento = Ordenamiento.fechaDescendente;
+
+  // Getters públicos
+  bool get esModoOscuro => _esModoOscuro;
+  String get perfilActual => _perfilActual;
+  List<String> get perfiles => _perfiles;
+  double get saldoInicialEfectivo => _saldoInicialEfectivo;
+  double get saldoInicialDigital => _saldoInicialDigital;
+  Ordenamiento get ordenamiento => _ordenamiento;
+  double get currentCashBalance => saldoActualEfectivo;
+  double get currentDigitalBalance => saldoActualDigital;
+  double get currentBalance => saldoActual;
+
+  // Getters para filtros
+  FiltroTipo get filtroTipo => _filtroTipo;
+  FiltroOperacion get filtroOperacion => _filtroOperacion;
+  FiltroPeriodo get filtroPeriodo => _filtroPeriodo;
+  DateTime? get fechaInicio => _fechaInicio;
+  DateTime? get fechaFin => _fechaFin;
+
+  List<Movement> get movimientos {
+    var lista = _cajaMovimientos.values.toList();
+
+    // Aplicar filtro de tipo (efectivo/digital)
+    if (_filtroTipo != FiltroTipo.todos) {
+      lista = lista
+          .where((m) =>
+              _filtroTipo == FiltroTipo.efectivo ? !m.isDigital : m.isDigital)
+          .toList();
+    }
+
+    // Aplicar filtro de operación (ingresos/egresos)
+    if (_filtroOperacion != FiltroOperacion.todos) {
+      lista = lista
+          .where((m) => _filtroOperacion == FiltroOperacion.ingresos
+              ? m.amount > 0
+              : m.amount < 0)
+          .toList();
+    }
+
+    // Aplicar filtro de período
+    final now = DateTime.now();
+    switch (_filtroPeriodo) {
+      case FiltroPeriodo.hoy:
+        lista = lista
+            .where((m) =>
+                m.date.year == now.year &&
+                m.date.month == now.month &&
+                m.date.day == now.day)
+            .toList();
+        break;
+      case FiltroPeriodo.esteMes:
+        lista = lista
+            .where((m) => m.date.year == now.year && m.date.month == now.month)
+            .toList();
+        break;
+      case FiltroPeriodo.esteAnio:
+        lista = lista.where((m) => m.date.year == now.year).toList();
+        break;
+      case FiltroPeriodo.todo:
+        // No aplicar filtro
+        break;
+    }
+
+    // Aplicar filtro de fecha personalizado si está configurado
+    if (_fechaInicio != null) {
+      lista = lista.where((m) => m.date.isAfter(_fechaInicio!)).toList();
+    }
+    if (_fechaFin != null) {
+      lista = lista.where((m) => m.date.isBefore(_fechaFin!)).toList();
+    }
+
+    // Aplicar ordenamiento
+    switch (_ordenamiento) {
+      case Ordenamiento.fechaDescendente:
+        lista.sort((a, b) => b.date.compareTo(a.date));
+        break;
+      case Ordenamiento.fechaAscendente:
+        lista.sort((a, b) => a.date.compareTo(b.date));
+        break;
+      case Ordenamiento.alfabeticoAscendente:
+        lista.sort((a, b) => a.concept.compareTo(b.concept));
+        break;
+      case Ordenamiento.alfabeticoDescendente:
+        lista.sort((a, b) => b.concept.compareTo(a.concept));
+        break;
+      case Ordenamiento.montoAscendente:
+        lista.sort((a, b) => a.amount.compareTo(b.amount));
+        break;
+      case Ordenamiento.montoDescendente:
+        lista.sort((a, b) => b.amount.compareTo(a.amount));
+        break;
+    }
+
+    return lista;
+  }
+
+  double get saldoActualEfectivo {
+    return _saldoInicialEfectivo +
+        _cajaMovimientos.values
+            .where((m) => !m.isDigital)
+            .fold(0.0, (sum, m) => sum + m.amount);
+  }
+
+  double get saldoActualDigital {
+    return _saldoInicialDigital +
+        _cajaMovimientos.values
+            .where((m) => m.isDigital)
+            .fold(0.0, (sum, m) => sum + m.amount);
+  }
+
+  double get saldoActual => saldoActualEfectivo + saldoActualDigital;
+
+  Future<void> init() async {
+    try {
+      _cajaConfiguracion = await Hive.openBox('settings');
+      _cajaPerfiles = await Hive.openBox<String>('profiles');
+
+      _esModoOscuro = _cajaConfiguracion.get('isDarkMode', defaultValue: false);
+      _ordenamiento = Ordenamiento.values[_cajaConfiguracion.get('sortOrder',
+          defaultValue: Ordenamiento.fechaDescendente.index)];
+
+      _perfiles = _cajaPerfiles.values.toList();
+      if (_perfiles.isEmpty) {
+        _perfilActual = 'ninguno';
+      } else {
+        _perfilActual = _cajaConfiguracion.get('currentProfile',
+            defaultValue: _perfiles.first);
+      }
+
+      if (_perfiles.isNotEmpty && !_perfiles.contains(_perfilActual)) {
+        _perfilActual = _perfiles.first;
+      }
+
+      // Inicializar las cajas antes de abrir el perfil
+      _cajaMovimientos =
+          await Hive.openBox<Movement>('movements_$_perfilActual');
+      _cajaSaldos = await Hive.openBox<double>('balances_$_perfilActual');
+
+      await _cargarDatosIniciales();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error en init: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> _abrirCajasDelPerfil() async {
+    try {
+      if (_cajaMovimientos.isOpen) {
+        await _cajaMovimientos.close();
+      }
+      if (_cajaSaldos.isOpen) {
+        await _cajaSaldos.close();
+      }
+
+      _cajaMovimientos =
+          await Hive.openBox<Movement>('movements_$_perfilActual');
+      _cajaSaldos = await Hive.openBox<double>('balances_$_perfilActual');
+
+      await _cargarDatosIniciales();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error al abrir cajas del perfil: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> _cargarDatosIniciales() async {
+    _saldoInicialEfectivo = _cajaSaldos.get('cashBalance', defaultValue: 0.0)!;
+    _saldoInicialDigital =
+        _cajaSaldos.get('digitalBalance', defaultValue: 0.0)!;
+  }
+
+  Future<void> _cerrarBoxSiAbierta(String nombreBox) async {
+    if (Hive.isBoxOpen(nombreBox)) {
+      final box = Hive.box(nombreBox);
+      if (box.isOpen) {
+        await box.close();
+      }
+    }
+  }
+
+  void alternarTema() {
+    _esModoOscuro = !_esModoOscuro;
+    _cajaConfiguracion.put('isDarkMode', _esModoOscuro);
+    notifyListeners();
+  }
+
+  void alternarOrdenamiento() {
+    _ordenamiento = _ordenamiento == Ordenamiento.fechaDescendente
+        ? Ordenamiento.fechaAscendente
+        : Ordenamiento.fechaDescendente;
+    _cajaConfiguracion.put('sortOrder', _ordenamiento.index);
+    notifyListeners();
+  }
+
+  Future<void> cambiarPerfil(String nombrePerfil) async {
+    if (nombrePerfil == _perfilActual || !_perfiles.contains(nombrePerfil)) {
+      return;
+    }
+    _perfilActual = nombrePerfil;
+    await _cajaConfiguracion.put('currentProfile', _perfilActual);
+    await _abrirCajasDelPerfil();
+  }
+
+  Future<void> crearPerfil(String nombrePerfil) async {
+    final recortado = nombrePerfil.trim();
+    if (recortado.isEmpty || _perfiles.contains(recortado)) {
+      return;
+    }
+    await _cajaPerfiles.add(recortado);
+    _perfiles.add(recortado);
+    if (_perfiles.length == 1) {
+      await cambiarPerfil(recortado);
+    }
+    notifyListeners();
+  }
+
+  Future<void> editarNombrePerfil(
+      String nombreViejo, String nombreNuevo) async {
+    final recortado = nombreNuevo.trim();
+    if (recortado.isEmpty ||
+        nombreViejo == recortado ||
+        _perfiles.contains(recortado) ||
+        !_perfiles.contains(nombreViejo)) {
+      return;
+    }
+
+    try {
+      // Obtener el índice del perfil viejo en la lista
+      final index = _perfiles.indexOf(nombreViejo);
+
+      // Actualizar el nombre en la lista de perfiles
+      _perfiles[index] = recortado;
+
+      // Actualizar en la caja de perfiles
+      for (var key in _cajaPerfiles.keys) {
+        if (_cajaPerfiles.get(key) == nombreViejo) {
+          await _cajaPerfiles.put(key, recortado);
+          break;
+        }
+      }
+
+      // Si es el perfil actual, actualizar el nombre y la configuración
+      if (_perfilActual == nombreViejo) {
+        _perfilActual = recortado;
+        await _cajaConfiguracion.put('currentProfile', recortado);
+      }
+
+      // Renombrar las boxes del perfil
+      final oldMovementsBoxName = 'movements_$nombreViejo';
+      final oldBalancesBoxName = 'balances_$nombreViejo';
+      final newMovementsBoxName = 'movements_$recortado';
+      final newBalancesBoxName = 'balances_$recortado';
+
+      // Cerrar las boxes si están abiertas
+      if (_perfilActual == nombreViejo) {
+        if (_cajaMovimientos.isOpen) await _cajaMovimientos.close();
+        if (_cajaSaldos.isOpen) await _cajaSaldos.close();
+      } else {
+        await _cerrarBoxSiAbierta(oldMovementsBoxName);
+        await _cerrarBoxSiAbierta(oldBalancesBoxName);
+      }
+
+      // Copiar y renombrar las boxes
+      if (await Hive.boxExists(oldMovementsBoxName)) {
+        final oldBox = await Hive.openBox<Movement>(oldMovementsBoxName);
+        final newBox = await Hive.openBox<Movement>(newMovementsBoxName);
+
+        // Copiar todos los movimientos
+        final movements = oldBox.values.toList();
+        await newBox.addAll(movements);
+
+        await oldBox.close();
+        await newBox.close();
+        await Hive.deleteBoxFromDisk(oldMovementsBoxName);
+      }
+
+      if (await Hive.boxExists(oldBalancesBoxName)) {
+        final oldBox = await Hive.openBox<double>(oldBalancesBoxName);
+        final newBox = await Hive.openBox<double>(newBalancesBoxName);
+
+        // Copiar todos los saldos
+        for (var key in oldBox.keys) {
+          final value = oldBox.get(key);
+          if (value != null) {
+            await newBox.put(key, value);
+          }
+        }
+
+        await oldBox.close();
+        await newBox.close();
+        await Hive.deleteBoxFromDisk(oldBalancesBoxName);
+      }
+
+      // Si es el perfil actual, reabrir las boxes con el nuevo nombre
+      if (_perfilActual == recortado) {
+        await _abrirCajasDelPerfil();
+      }
+
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error al editar nombre de perfil: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> eliminarPerfil(String nombrePerfil) async {
+    if (_perfiles.isEmpty || !_perfiles.contains(nombrePerfil)) return;
+
+    try {
+      // Si es el perfil actual, cambiar a otro primero
+      if (_perfilActual == nombrePerfil) {
+        // Cerrar las boxes actuales
+        if (_cajaMovimientos.isOpen) await _cajaMovimientos.close();
+        if (_cajaSaldos.isOpen) await _cajaSaldos.close();
+
+        if (_perfiles.length > 1) {
+          String nuevoPerfil = _perfiles.firstWhere((p) => p != nombrePerfil);
+          _perfilActual = nuevoPerfil;
+          await _cajaConfiguracion.put('currentProfile', _perfilActual);
+          await _abrirCajasDelPerfil();
+        } else {
+          _perfilActual = 'ninguno';
+          await _cajaConfiguracion.put('currentProfile', _perfilActual);
+          await _abrirCajasDelPerfil();
+        }
+      }
+
+      // Eliminar las boxes del perfil
+      final movementsBoxName = 'movements_$nombrePerfil';
+      final balancesBoxName = 'balances_$nombrePerfil';
+
+      // Cerrar y eliminar las boxes si existen
+      await _cerrarBoxSiAbierta(movementsBoxName);
+      await _cerrarBoxSiAbierta(balancesBoxName);
+
+      // Eliminar las boxes del disco
+      if (await Hive.boxExists(movementsBoxName)) {
+        await Hive.deleteBoxFromDisk(movementsBoxName);
+      }
+      if (await Hive.boxExists(balancesBoxName)) {
+        await Hive.deleteBoxFromDisk(balancesBoxName);
+      }
+
+      // Eliminar el perfil de la lista y de la caja de perfiles
+      _perfiles.remove(nombrePerfil);
+      for (var key in _cajaPerfiles.keys) {
+        if (_cajaPerfiles.get(key) == nombrePerfil) {
+          await _cajaPerfiles.delete(key);
+          break;
+        }
+      }
+
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error al eliminar perfil: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> agregarMovimiento(Movement movimiento) async {
+    await _cajaMovimientos.add(movimiento);
+    notifyListeners();
+  }
+
+  Future<void> editarMovimiento(int indice, Movement nuevoMovimiento) async {
+    if (indice >= 0 && indice < _cajaMovimientos.length) {
+      await _cajaMovimientos.putAt(indice, nuevoMovimiento);
+      notifyListeners();
+    }
+  }
+
+  Future<void> eliminarMovimiento(int indice) async {
+    if (indice >= 0 && indice < _cajaMovimientos.length) {
+      await _cajaMovimientos.deleteAt(indice);
+      notifyListeners();
+    }
+  }
+
+  Future<void> limpiarMovimientos() async {
+    await _cajaMovimientos.clear();
+    notifyListeners();
+  }
+
+  Future<void> establecerSaldoInicialEfectivo(double saldo) async {
+    _saldoInicialEfectivo = saldo;
+    await _cajaSaldos.put('cashBalance', saldo);
+    notifyListeners();
+  }
+
+  Future<void> establecerSaldoInicialDigital(double saldo) async {
+    _saldoInicialDigital = saldo;
+    await _cajaSaldos.put('digitalBalance', saldo);
+    notifyListeners();
+  }
+
+  // Métodos para establecer filtros
+  void establecerFiltroTipo(FiltroTipo tipo) {
+    _filtroTipo = tipo;
+    notifyListeners();
+  }
+
+  void establecerFiltroOperacion(FiltroOperacion operacion) {
+    _filtroOperacion = operacion;
+    notifyListeners();
+  }
+
+  void establecerFiltroPeriodo(FiltroPeriodo periodo) {
+    _filtroPeriodo = periodo;
+    _fechaInicio = null;
+    _fechaFin = null;
+    notifyListeners();
+  }
+
+  void establecerFiltroFechaPersonalizado(DateTime inicio, DateTime fin) {
+    _filtroPeriodo = FiltroPeriodo.todo;
+    _fechaInicio = inicio;
+    _fechaFin = fin;
+    notifyListeners();
+  }
+
+  void limpiarFiltros() {
+    _filtroTipo = FiltroTipo.todos;
+    _filtroOperacion = FiltroOperacion.todos;
+    _filtroPeriodo = FiltroPeriodo.todo;
+    _fechaInicio = null;
+    _fechaFin = null;
+    notifyListeners();
+  }
+
+  Future<String> exportProfileBackup(String profile) async {
+    if (!_perfiles.contains(profile)) {
+      throw Exception('El perfil $profile no existe');
+    }
+
+    final Map<String, dynamic> data = {};
+    final movementsBoxName = 'movements_$profile';
+    final balancesBoxName = 'balances_$profile';
+
+    try {
+      // Exportar movimientos
+      if (await Hive.boxExists(movementsBoxName)) {
+        Box<dynamic> box;
+        bool needsClosing = false;
+
+        if (Hive.isBoxOpen(movementsBoxName)) {
+          box = Hive.box(movementsBoxName);
+        } else {
+          box = await Hive.openBox(movementsBoxName);
+          needsClosing = true;
+        }
+
+        data['movements'] = box.values.map((m) {
+          final Movement mv = m as Movement;
+          return {
+            'date': mv.date.toIso8601String(),
+            'concept': mv.concept,
+            'amount': mv.amount,
+            'isDigital': mv.isDigital,
+          };
+        }).toList();
+
+        if (needsClosing) {
+          await box.close();
+        }
+      } else {
+        data['movements'] = [];
+      }
+
+      // Exportar saldos
+      if (await Hive.boxExists(balancesBoxName)) {
+        Box<dynamic> box;
+        bool needsClosing = false;
+
+        if (Hive.isBoxOpen(balancesBoxName)) {
+          box = Hive.box(balancesBoxName);
+        } else {
+          box = await Hive.openBox(balancesBoxName);
+          needsClosing = true;
+        }
+
+        final Map<String, dynamic> balancesMap = {};
+        for (var key in box.keys) {
+          balancesMap[key.toString()] = box.get(key);
+        }
+        data['balances'] = balancesMap;
+
+        if (needsClosing) {
+          await box.close();
+        }
+      } else {
+        data['balances'] = {};
+      }
+
+      data['profile'] = profile;
+      data['exportedAt'] = DateTime.now().toIso8601String();
+
+      final output = await getApplicationDocumentsDirectory();
+      final filename =
+          'gastos_backup_${profile}_${DateTime.now().millisecondsSinceEpoch}.json';
+      final file = File('${output.path}/$filename');
+      await file.writeAsString(jsonEncode(data));
+      return file.path;
+    } catch (e) {
+      debugPrint('Error al exportar backup: $e');
+      rethrow;
+    }
+  }
+
+  Future<String> exportarAPdf() async => exportToPdf();
+
+  Future<String> exportToPdf() async {
+    final pdf = pw.Document();
+    final generationDate = DateTime.now();
+    final movimientos = this.movimientos;
+
+    pdf.addPage(
+      pw.Page(
+        build: (context) => pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Center(
+              child: pw.Text('Reporte de Movimientos',
+                  style: pw.TextStyle(
+                      fontSize: 24, fontWeight: pw.FontWeight.bold)),
+            ),
+            pw.Text(
+              'Perfil: $_perfilActual',
+              style: const pw.TextStyle(fontSize: 16),
+            ),
+            pw.Text(
+                'Generado: ${generationDate.day}/${generationDate.month}/${generationDate.year} a las ${generationDate.hour}:${generationDate.minute.toString().padLeft(2, '0')}'),
+            pw.SizedBox(height: 20),
+            pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text(
+                        'Saldo Inicial Efectivo: \$${_saldoInicialEfectivo.toStringAsFixed(2)}'),
+                    pw.Text(
+                        'Saldo Actual Efectivo: \$${saldoActualEfectivo.toStringAsFixed(2)}'),
+                  ],
+                ),
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.end,
+                  children: [
+                    pw.Text(
+                        'Saldo Inicial Digital: \$${_saldoInicialDigital.toStringAsFixed(2)}'),
+                    pw.Text(
+                        'Saldo Actual Digital: \$${saldoActualDigital.toStringAsFixed(2)}'),
+                  ],
+                ),
+              ],
+            ),
+            pw.SizedBox(height: 20),
+            pw.TableHelper.fromTextArray(
+              context: context,
+              headers: ['Fecha', 'Concepto', 'Tipo', 'Monto'],
+              data: movimientos
+                  .map((movement) => [
+                        '${movement.date.day}/${movement.date.month}/${movement.date.year}',
+                        movement.concept,
+                        movement.isDigital ? 'Digital' : 'Efectivo',
+                        '\$${movement.amount.toStringAsFixed(2)}',
+                      ])
+                  .toList(),
+            ),
+            pw.SizedBox(height: 20),
+            pw.Divider(),
+            pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.end,
+              children: [
+                pw.Text(
+                  'Total: \$${saldoActual.toStringAsFixed(2)}',
+                  style: pw.TextStyle(
+                    fontSize: 20,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final formattedDateTime =
+        "${generationDate.year}${generationDate.month.toString().padLeft(2, '0')}${generationDate.day.toString().padLeft(2, '0')}_${generationDate.hour.toString().padLeft(2, '0')}${generationDate.minute.toString().padLeft(2, '0')}${generationDate.second.toString().padLeft(2, '0')}";
+    final output = await getApplicationDocumentsDirectory();
+    final file = File(
+        '${output.path}/movimientos_${_perfilActual}_$formattedDateTime.pdf');
+    await file.writeAsBytes(await pdf.save());
+
+    OpenFile.open(file.path);
+    return file.path;
+  }
+}
