@@ -67,10 +67,10 @@ class MiAplicacion extends StatelessWidget {
         GlobalCupertinoLocalizations.delegate,
       ],
       supportedLocales: const [
-        Locale('es', 'ES'), // Español
+        Locale('es', 'US'), // Español (Domingo primer día)
       ],
-      locale:
-          const Locale('es', 'ES'), // Establece español como idioma por defecto
+      // Establece español (con domingo como primer día) como idioma por defecto para toda la app.
+      locale: const Locale('es', 'US'),
       home: const PantallaMovimientos(),
     );
   }

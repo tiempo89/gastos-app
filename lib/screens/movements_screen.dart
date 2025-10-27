@@ -182,9 +182,18 @@ class _PantallaMovimientosState extends State<PantallaMovimientos> {
               final DateTime? picked = await showDatePicker(
                 context: context,
                 initialDate: selectedDate,
-                firstDate: DateTime(2000),
-                lastDate: DateTime(
-                    2099), // Establece una fecha lejana para evitar errores
+                firstDate: DateTime(
+                    2000), // Establece una fecha lejana para evitar errores
+                lastDate: DateTime(2099),
+                // Usamos el builder para forzar que la semana empiece en domingo
+                builder: (context, child) {
+                  return Localizations.override(
+                    context: context,
+                    // 'es_US' usa el domingo como primer día de la semana
+                    locale: const Locale('es', 'US'),
+                    child: child,
+                  );
+                },
               );
               if (picked != null && picked != selectedDate) {
                 setState(() {

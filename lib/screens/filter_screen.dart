@@ -319,13 +319,14 @@ class FilterScreen extends StatelessWidget {
       helpText: 'Seleccionar período',
       cancelText: 'Cancelar',
       builder: (BuildContext context, Widget? child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: Theme.of(context).colorScheme.copyWith(
-                  primary: Theme.of(context).primaryColor,
-                ),
-          ),
-          child: child!,
+        // Usamos Localizations.override para forzar que la semana empiece en domingo
+        return Localizations.override(
+          context: context,
+          // 'es_US' usa el domingo como primer día de la semana
+          locale:
+              const Locale('es', 'US'), // Español con domingo como primer día
+          // Mantenemos el tema que ya tenías
+          child: child,
         );
       },
     );
