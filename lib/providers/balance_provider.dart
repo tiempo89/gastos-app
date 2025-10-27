@@ -230,10 +230,13 @@ class BalanceProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  void alternarOrdenamiento() {
-    _ordenamiento = _ordenamiento == Ordenamiento.fechaDescendente
-        ? Ordenamiento.fechaAscendente
-        : Ordenamiento.fechaDescendente;
+  void establecerOrdenamiento(Ordenamiento orden) {
+    _ordenamiento = orden;
+    _cajaConfiguracion.put('sortOrder', _ordenamiento.index);
+    notifyListeners();
+  }
+
+  void guardarOrdenamiento() {
     _cajaConfiguracion.put('sortOrder', _ordenamiento.index);
     notifyListeners();
   }
