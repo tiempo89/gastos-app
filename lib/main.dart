@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'providers/balance_provider.dart';
@@ -15,8 +14,7 @@ void main() {
   // de hacer runApp().
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
-    final appDocumentDir = await getApplicationDocumentsDirectory();
-    await Hive.initFlutter(appDocumentDir.path);
+    await Hive.initFlutter();
     Hive.registerAdapter(MovementAdapter());
 
     final balanceProvider = BalanceProvider();
