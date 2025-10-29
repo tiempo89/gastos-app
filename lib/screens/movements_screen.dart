@@ -314,169 +314,218 @@ class _PantallaMovimientosState extends State<PantallaMovimientos> {
 
     return Scaffold(
       drawer: Drawer(
-        child: ListView(
-          padding: EdgeInsets.zero,
+        // Usamos una Column para tener un control más preciso del layout
+        child: Column(
           children: [
             DrawerHeader(
-              decoration: const BoxDecoration(
-                image: DecorationImage(
-                  image: AssetImage('assets/images/drawer_background.jpg'),
-                  fit: BoxFit.cover,
-                  colorFilter:
-                      ColorFilter.mode(Color(0x80000000), BlendMode.darken),
-                ),
+              // 1. La cabecera con color sólido
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primaryContainer,
               ),
-              child: Text(
-                'Perfiles',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  shadows: [const Shadow(blurRadius: 10, color: Colors.black)],
+              child: SizedBox(
+                width: double.infinity,
+                child: Center(
+                  child: Text(
+                    'Perfiles',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                          color:
+                              Theme.of(context).colorScheme.onPrimaryContainer,
+                          fontWeight: FontWeight.bold,
+                        ),
+                  ),
                 ),
               ),
             ),
-            ...balanceProvider.perfiles.map((profile) => ListTile(
-                  title: Text(
-                    profile,
-                    overflow: TextOverflow.ellipsis,
+            // 2. Usamos Expanded para que esta sección ocupe todo el espacio restante
+            Expanded(
+              child: Stack(
+                children: [
+                  // 1. Imagen de fondo solo para esta sección
+                  Positioned.fill(
+                    child: Image.asset(
+                      'assets/images/rezero 178.jpg',
+                      fit: BoxFit.cover,
+                      alignment: Alignment.center,
+                    ),
                   ),
-                  selected: profile == balanceProvider.perfilActual,
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
+                  // 2. Capa de contraste
+                  Positioned.fill(
+                    child: Container(
+                      color: Theme.of(context).brightness == Brightness.dark
+                          ? const Color.fromRGBO(0, 0, 0, 0.55)
+                          : const Color.fromRGBO(255, 255, 255, 0.65),
+                    ),
+                  ),
+                  // 3. Lista de perfiles sobre la imagen
+                  ListView(
+                    padding: EdgeInsets.zero,
                     children: [
-                      IconButton(
-                        icon: const Icon(Icons.edit_outlined),
-                        tooltip: 'Editar nombre',
-                        onPressed: () {
-                          Navigator.pop(context); // Close drawer
-                          _mostrarDialogoEditarPerfil(context, profile);
-                        },
+                      ...balanceProvider.perfiles.map(
+                        (profile) => ListTile(
+                          title: Text(
+                            profile,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          selected: profile == balanceProvider.perfilActual,
+                          selectedTileColor: Theme.of(context)
+                              .colorScheme
+                              .primary
+                              .withAlpha(77), // ~30% opacity
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.edit_outlined),
+                                tooltip: 'Editar nombre',
+                                onPressed: () {
+                                  Navigator.pop(context); // Close drawer
+                                  _mostrarDialogoEditarPerfil(context, profile);
+                                },
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.delete_outline,
+                                    color: Colors.red),
+                                tooltip: 'Eliminar perfil',
+                                onPressed: () async {
+                                  Navigator.pop(context); // Close drawer
+                                  final bp = Provider.of<BalanceProvider>(
+                                      context,
+                                      listen: false);
+                                  // Confirm deletion
+                                  if (!context.mounted) return;
+                                  final result =
+                                      await showDialog<Map<String, dynamic>>(
+                                    context: context,
+                                    builder: (context) {
+                                      bool shouldExport = true;
+                                      return StatefulBuilder(
+                                        builder: (context, setState) =>
+                                            AlertDialog(
+                                          title: Text(
+                                              '¿Eliminar perfil "$profile"?'),
+                                          content: Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Text(
+                                                  'Esta acción eliminará los saldos y movimientos asociados a este perfil. ¿Quieres continuar?'),
+                                              const SizedBox(height: 12),
+                                              Row(
+                                                children: [
+                                                  Checkbox(
+                                                    value: shouldExport,
+                                                    onChanged: (v) =>
+                                                        setState(() {
+                                                      shouldExport = v ?? false;
+                                                    }),
+                                                  ),
+                                                  const SizedBox(width: 8),
+                                                  const Expanded(
+                                                    child: Text(
+                                                        'Exportar backup antes de borrar (recomendado)'),
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+                                          ),
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () => Navigator.pop(
+                                                  context,
+                                                  {'confirmed': false}),
+                                              child: const Text('Cancelar'),
+                                            ),
+                                            TextButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(context, {
+                                                'confirmed': true,
+                                                'export': shouldExport,
+                                              }),
+                                              style: TextButton.styleFrom(
+                                                  foregroundColor: Colors.red),
+                                              child: const Text('Eliminar'),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    },
+                                  );
+
+                                  if (result == null ||
+                                      result['confirmed'] != true) {
+                                    return;
+                                  }
+
+                                  final bool doExport =
+                                      result['export'] == true;
+                                  final buildContext = context;
+
+                                  // Primero cambiar de perfil si es necesario
+                                  if (bp.perfilActual == profile) {
+                                    if (bp.perfiles.length > 1) {
+                                      // Cambiar a otro perfil disponible
+                                      String nuevoPerfil = bp.perfiles
+                                          .firstWhere((p) => p != profile);
+                                      await bp.cambiarPerfil(nuevoPerfil);
+                                    }
+                                  }
+
+                                  // Ahora intentar el backup si se solicitó
+                                  if (doExport) {
+                                    try {
+                                      final path =
+                                          await bp.exportProfileBackup(profile);
+                                      if (!buildContext.mounted) return;
+                                      ScaffoldMessenger.of(buildContext)
+                                          .showSnackBar(
+                                        SnackBar(
+                                          content:
+                                              Text('Backup guardado en: $path'),
+                                          duration: const Duration(seconds: 4),
+                                        ),
+                                      );
+                                    } catch (e) {
+                                      if (!buildContext.mounted) return;
+                                      ScaffoldMessenger.of(buildContext)
+                                          .showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                              'Error al exportar backup: $e'),
+                                          backgroundColor: Colors.red,
+                                        ),
+                                      );
+                                      // Si la exportación falla, abortar la eliminación para seguridad
+                                      return;
+                                    }
+                                  }
+
+                                  // Finalmente eliminar el perfil
+                                  await bp.eliminarPerfil(profile);
+
+                                  // Si no quedan perfiles, abrir el diálogo para crear uno nuevo
+                                  if (bp.perfiles.isEmpty) {
+                                    if (!buildContext.mounted) return;
+                                    _mostrarDialogoCrearPerfil(buildContext);
+                                  }
+                                },
+                              ),
+                            ],
+                          ),
+                          onTap: () {
+                            balanceProvider.cambiarPerfil(profile);
+                            Navigator.pop(context);
+                          },
+                        ),
                       ),
-                      IconButton(
-                        icon:
-                            const Icon(Icons.delete_outline, color: Colors.red),
-                        tooltip: 'Eliminar perfil',
-                        onPressed: () async {
-                          Navigator.pop(context); // Close drawer
-                          final bp = Provider.of<BalanceProvider>(context,
-                              listen: false);
-                          // Confirm deletion
-                          if (!context.mounted) return;
-                          final result = await showDialog<Map<String, dynamic>>(
-                            context: context,
-                            builder: (context) {
-                              bool shouldExport = true;
-                              return StatefulBuilder(
-                                builder: (context, setState) => AlertDialog(
-                                  title: Text('¿Eliminar perfil "$profile"?'),
-                                  content: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      const Text(
-                                          'Esta acción eliminará los saldos y movimientos asociados a este perfil. ¿Quieres continuar?'),
-                                      const SizedBox(height: 12),
-                                      Row(
-                                        children: [
-                                          Checkbox(
-                                            value: shouldExport,
-                                            onChanged: (v) => setState(() {
-                                              shouldExport = v ?? false;
-                                            }),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          const Expanded(
-                                            child: Text(
-                                                'Exportar backup antes de borrar (recomendado)'),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                  actions: [
-                                    TextButton(
-                                      onPressed: () => Navigator.pop(
-                                          context, {'confirmed': false}),
-                                      child: const Text('Cancelar'),
-                                    ),
-                                    TextButton(
-                                      onPressed: () => Navigator.pop(context, {
-                                        'confirmed': true,
-                                        'export': shouldExport,
-                                      }),
-                                      style: TextButton.styleFrom(
-                                          foregroundColor: Colors.red),
-                                      child: const Text('Eliminar'),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
-                          );
-
-                          if (result == null || result['confirmed'] != true) {
-                            return;
-                          }
-
-                          final bool doExport = result['export'] == true;
-                          final buildContext = context;
-
-                          // Primero cambiar de perfil si es necesario
-                          if (bp.perfilActual == profile) {
-                            if (bp.perfiles.length > 1) {
-                              // Cambiar a otro perfil disponible
-                              String nuevoPerfil =
-                                  bp.perfiles.firstWhere((p) => p != profile);
-                              await bp.cambiarPerfil(nuevoPerfil);
-                            }
-                          }
-
-                          // Ahora intentar el backup si se solicitó
-                          if (doExport) {
-                            try {
-                              final path =
-                                  await bp.exportProfileBackup(profile);
-                              if (!buildContext.mounted) return;
-                              ScaffoldMessenger.of(buildContext).showSnackBar(
-                                SnackBar(
-                                  content: Text('Backup guardado en: $path'),
-                                  duration: const Duration(seconds: 4),
-                                ),
-                              );
-                            } catch (e) {
-                              if (!buildContext.mounted) return;
-                              ScaffoldMessenger.of(buildContext).showSnackBar(
-                                SnackBar(
-                                  content: Text('Error al exportar backup: $e'),
-                                  backgroundColor: Colors.red,
-                                ),
-                              );
-                              // Si la exportación falla, abortar la eliminación para seguridad
-                              return;
-                            }
-                          }
-
-                          // Finalmente eliminar el perfil
-                          await bp.eliminarPerfil(profile);
-
-                          // Si no quedan perfiles, abrir el diálogo para crear uno nuevo
-                          if (bp.perfiles.isEmpty) {
-                            if (!buildContext.mounted) return;
-                            _mostrarDialogoCrearPerfil(buildContext);
-                          }
-                        },
+                      const Divider(),
+                      ListTile(
+                        leading: const Icon(Icons.add),
+                        title: const Text('Crear Perfil'),
+                        onTap: () => _mostrarDialogoCrearPerfil(context),
                       ),
                     ],
                   ),
-                  onTap: () {
-                    balanceProvider.cambiarPerfil(profile);
-                    Navigator.pop(context);
-                  },
-                )),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.add),
-              title: const Text('Crear Perfil'),
-              onTap: () => _mostrarDialogoCrearPerfil(context),
+                ],
+              ),
             ),
           ],
         ),
