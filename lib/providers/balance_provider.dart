@@ -489,23 +489,22 @@ class BalanceProvider with ChangeNotifier {
     try {
       // Exportar movimientos
       if (await Hive.boxExists(movementsBoxName)) {
-        Box<dynamic> box;
+        Box<Movement> box;
         bool needsClosing = false;
 
         if (Hive.isBoxOpen(movementsBoxName)) {
-          box = Hive.box(movementsBoxName);
+          box = Hive.box<Movement>(movementsBoxName);
         } else {
           box = await Hive.openBox<Movement>(movementsBoxName);
           needsClosing = true;
         }
 
         data['movements'] = box.values.map((m) {
-          final Movement mv = m as Movement;
           return {
-            'date': mv.date.toIso8601String(),
-            'concept': mv.concept,
-            'amount': mv.amount,
-            'isDigital': mv.isDigital,
+            'date': m.date.toIso8601String(),
+            'concept': m.concept,
+            'amount': m.amount,
+            'isDigital': m.isDigital,
           };
         }).toList();
 
@@ -518,11 +517,11 @@ class BalanceProvider with ChangeNotifier {
 
       // Exportar saldos
       if (await Hive.boxExists(balancesBoxName)) {
-        Box<dynamic> box;
+        Box<double> box;
         bool needsClosing = false;
 
         if (Hive.isBoxOpen(balancesBoxName)) {
-          box = Hive.box(balancesBoxName);
+          box = Hive.box<double>(balancesBoxName);
         } else {
           box = await Hive.openBox<double>(balancesBoxName);
           needsClosing = true;
@@ -552,6 +551,68 @@ class BalanceProvider with ChangeNotifier {
       return file.path;
     } catch (e) {
       debugPrint('Error al exportar backup: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> importProfileBackup(String jsonString) async {
+    try {
+      final Map<String, dynamic> data = jsonDecode(jsonString);
+
+      // 1. Validar la estructura del JSON
+      if (data['profile'] == null ||
+          data['movements'] == null ||
+          data['balances'] == null) {
+        throw Exception('El archivo de backup no es válido o está corrupto.');
+      }
+
+      // 2. Manejar nombres de perfil duplicados
+      String originalName = data['profile'];
+      String profileName = originalName;
+      int counter = 1;
+      while (_perfiles.contains(profileName)) {
+        profileName = '$originalName (${counter++})';
+      }
+
+      // 3. Crear y cambiar al nuevo perfil
+      await crearPerfil(profileName);
+
+      // 4. Importar los movimientos
+      final List<dynamic> movementsData = data['movements'];
+      final List<Movement> newMovements = movementsData.map((m) {
+        return Movement(
+          date: DateTime.parse(m['date']),
+          concept: m['concept'],
+          amount: (m['amount'] as num).toDouble(),
+          isDigital: m['isDigital'],
+        );
+      }).toList();
+
+      // Asegurarse de que la caja de movimientos del nuevo perfil esté abierta
+      final movementsBox = Hive.box<Movement>('movements_$profileName');
+      await movementsBox.addAll(newMovements);
+
+      // 5. Importar los saldos iniciales
+      final Map<String, dynamic> balancesData = data['balances'];
+      final balancesBox = Hive.box<double>('balances_$profileName');
+
+      final double cashBalance =
+          (balancesData['cashBalance'] as num?)?.toDouble() ?? 0.0;
+      final double digitalBalance =
+          (balancesData['digitalBalance'] as num?)?.toDouble() ?? 0.0;
+
+      await balancesBox.put('cashBalance', cashBalance);
+      await balancesBox.put('digitalBalance', digitalBalance);
+
+      // 6. Recargar los datos del perfil recién importado
+      await _cargarDatosIniciales();
+
+      // Notificar a la UI para que se actualice
+      notifyListeners();
+    } on FormatException {
+      throw Exception('El formato del archivo JSON es incorrecto.');
+    } catch (e) {
+      // Re-lanzar cualquier otra excepción para que la UI la maneje
       rethrow;
     }
   }

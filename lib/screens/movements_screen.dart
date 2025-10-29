@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:file_picker/file_picker.dart';
+import 'dart:io'; // Importar la librería dart:io para la clase File
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../providers/balance_provider.dart';
@@ -327,6 +329,56 @@ class _PantallaMovimientosState extends State<PantallaMovimientos> {
     );
   }
 
+  Future<void> _importarBackup(BuildContext context) async {
+    // 1. Usar file_picker para seleccionar un archivo JSON
+    FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['json'],
+    );
+
+    if (result != null && result.files.single.path != null) {
+      // Asegurarse de que el widget sigue montado antes de usar el context.
+      if (!context.mounted) return;
+
+      // Guardamos la referencia al ScaffoldMessenger antes de la pausa asíncrona.
+      final messenger = ScaffoldMessenger.of(context);
+
+      // Asegurarse de que el widget sigue montado antes de usar context
+      if (!context.mounted) return;
+      // 2. Mostrar diálogo de carga
+      _showLoadingDialog(context);
+
+      try {
+        final provider = Provider.of<BalanceProvider>(context, listen: false);
+        final file = File(result.files.single.path!);
+        final jsonString = await file.readAsString();
+
+        // Ahora usamos la referencia al provider que obtuvimos antes del await.
+        await provider.importProfileBackup(jsonString);
+
+        // 3. Cerrar diálogo y mostrar mensaje de éxito
+        if (!context.mounted) return;
+        Navigator.pop(context); // Cierra el diálogo de carga
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('Backup restaurado con éxito.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } catch (e) {
+        // 4. Cerrar diálogo y mostrar mensaje de error
+        if (!context.mounted) return;
+        Navigator.pop(context); // Cierra el diálogo de carga
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('Error al restaurar: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final balanceProvider = Provider.of<BalanceProvider>(context);
@@ -393,6 +445,45 @@ class _PantallaMovimientosState extends State<PantallaMovimientos> {
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
+                              IconButton(
+                                icon: const Icon(Icons.save_alt),
+                                tooltip: 'Exportar backup',
+                                onPressed: () async {
+                                  final buildContext = context;
+                                  final messenger =
+                                      ScaffoldMessenger.of(buildContext);
+
+                                  messenger.showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                          'Generando backup para "$profile"...'),
+                                    ),
+                                  );
+
+                                  try {
+                                    final bp = Provider.of<BalanceProvider>(
+                                        buildContext,
+                                        listen: false);
+                                    final path =
+                                        await bp.exportProfileBackup(profile);
+                                    messenger.showSnackBar(
+                                      SnackBar(
+                                        content:
+                                            Text('Backup guardado en: $path'),
+                                        duration: const Duration(seconds: 4),
+                                      ),
+                                    );
+                                  } catch (e) {
+                                    messenger.showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                            'Error al exportar backup: $e'),
+                                        backgroundColor: Colors.red,
+                                      ),
+                                    );
+                                  }
+                                },
+                              ),
                               IconButton(
                                 icon: const Icon(Icons.edit_outlined),
                                 tooltip: 'Editar nombre',
@@ -540,6 +631,12 @@ class _PantallaMovimientosState extends State<PantallaMovimientos> {
                         leading: const Icon(Icons.add),
                         title: const Text('Crear Perfil'),
                         onTap: () => _mostrarDialogoCrearPerfil(context),
+                      ),
+                      const Divider(),
+                      ListTile(
+                        leading: const Icon(Icons.upload_file),
+                        title: const Text('Restaurar Backup'),
+                        onTap: () => _importarBackup(context),
                       ),
                     ],
                   ),
