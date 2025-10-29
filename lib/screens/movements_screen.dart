@@ -161,7 +161,7 @@ class _PantallaMovimientosState extends State<PantallaMovimientos> {
   }
 
   void _mostrarDialogoEditarMovimiento(
-      BuildContext context, int index, Movement movement) {
+      BuildContext context, Movement movement) {
     final TextEditingController amountController =
         TextEditingController(text: movement.amount.toString());
     final TextEditingController conceptController =
@@ -284,7 +284,7 @@ class _PantallaMovimientosState extends State<PantallaMovimientos> {
                     );
 
                     await Provider.of<BalanceProvider>(context, listen: false)
-                        .editarMovimiento(index, newMovement);
+                        .editarMovimiento(movement.key, newMovement);
                     if (!context.mounted) return;
                     Navigator.pop(context);
                   },
@@ -293,7 +293,7 @@ class _PantallaMovimientosState extends State<PantallaMovimientos> {
                 TextButton(
                   onPressed: () async {
                     await Provider.of<BalanceProvider>(context, listen: false)
-                        .eliminarMovimiento(index);
+                        .eliminarMovimiento(movement.key);
                     if (!context.mounted) return;
                     Navigator.pop(context);
                   },
@@ -303,6 +303,25 @@ class _PantallaMovimientosState extends State<PantallaMovimientos> {
               ],
             );
           },
+        );
+      },
+    );
+  }
+
+  void _showLoadingDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      barrierDismissible:
+          false, // El usuario no puede cerrar el diálogo tocando fuera
+      builder: (BuildContext context) {
+        return const AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 24),
+              Text("Procesando..."),
+            ],
+          ),
         );
       },
     );
@@ -321,7 +340,7 @@ class _PantallaMovimientosState extends State<PantallaMovimientos> {
               // 1. La cabecera con color sólido
               decoration: BoxDecoration(
                 color: Theme.of(context).colorScheme.primaryContainer,
-              ),
+              ), // Este paréntesis estaba mal ubicado
               child: SizedBox(
                 width: double.infinity,
                 child: Center(
@@ -537,18 +556,19 @@ class _PantallaMovimientosState extends State<PantallaMovimientos> {
           IconButton(
             icon: const Icon(Icons.picture_as_pdf),
             onPressed: () async {
-              final provider =
-                  Provider.of<BalanceProvider>(context, listen: false);
-              final messenger = ScaffoldMessenger.of(context);
-              messenger.hideCurrentSnackBar();
-              messenger.showSnackBar(const SnackBar(
-                content: Text('Generando PDF...'),
-                duration: Duration(days: 1),
-              ));
+              // Mostramos el diálogo de carga
+              _showLoadingDialog(context);
+
               try {
+                final provider =
+                    Provider.of<BalanceProvider>(context, listen: false);
                 final path = await provider.exportarAPdf();
-                messenger.hideCurrentSnackBar();
-                messenger.showSnackBar(SnackBar(
+
+                // Si llegamos aquí, todo salió bien. Cerramos el diálogo de carga.
+                if (!context.mounted) return;
+                Navigator.pop(context);
+
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                   content: Text('PDF generado: $path'),
                   action: SnackBarAction(
                     label: 'Abrir',
@@ -556,8 +576,10 @@ class _PantallaMovimientosState extends State<PantallaMovimientos> {
                   ),
                 ));
               } catch (e) {
-                messenger.hideCurrentSnackBar();
-                messenger.showSnackBar(const SnackBar(
+                // Si hay un error, también cerramos el diálogo de carga.
+                if (!context.mounted) return;
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                   content: Text('Error al generar PDF'),
                 ));
               }
@@ -866,7 +888,7 @@ class _PantallaMovimientosState extends State<PantallaMovimientos> {
                         elevation: 1,
                         child: InkWell(
                           onLongPress: () => _mostrarDialogoEditarMovimiento(
-                              context, index, movement),
+                              context, movement),
                           child: Padding(
                             padding: const EdgeInsets.all(8.0),
                             child: Row(

@@ -1,9 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:open_file/open_file.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import '../models/movement.dart';
 
@@ -110,7 +112,10 @@ class BalanceProvider with ChangeNotifier {
       lista = lista.where((m) => m.date.isAfter(_fechaInicio!)).toList();
     }
     if (_fechaFin != null) {
-      lista = lista.where((m) => m.date.isBefore(_fechaFin!)).toList();
+      // Hacemos el filtro inclusivo para el día final.
+      // Se considera hasta el final del día de _fechaFin.
+      final fechaFinInclusiva = _fechaFin!.add(const Duration(days: 1));
+      lista = lista.where((m) => m.date.isBefore(fechaFinInclusiva)).toList();
     }
 
     // Aplicar ordenamiento
@@ -252,9 +257,8 @@ class BalanceProvider with ChangeNotifier {
     }
     await _cajaPerfiles.add(recortado);
     _perfiles.add(recortado);
-    if (_perfiles.length == 1) {
-      await cambiarPerfil(recortado);
-    }
+    // Siempre cambiamos al perfil recién creado para asegurar que las cajas se abran correctamente.
+    await cambiarPerfil(recortado);
     notifyListeners();
   }
 
@@ -406,16 +410,18 @@ class BalanceProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> editarMovimiento(int indice, Movement nuevoMovimiento) async {
-    if (indice >= 0 && indice < _cajaMovimientos.length) {
-      await _cajaMovimientos.putAt(indice, nuevoMovimiento);
+  Future<void> editarMovimiento(dynamic key, Movement nuevoMovimiento) async {
+    // Usamos la clave única del objeto Hive para asegurar que editamos el correcto.
+    if (_cajaMovimientos.containsKey(key)) {
+      await _cajaMovimientos.put(key, nuevoMovimiento);
       notifyListeners();
     }
   }
 
-  Future<void> eliminarMovimiento(int indice) async {
-    if (indice >= 0 && indice < _cajaMovimientos.length) {
-      await _cajaMovimientos.deleteAt(indice);
+  Future<void> eliminarMovimiento(dynamic key) async {
+    // Usamos la clave única del objeto Hive para asegurar que eliminamos el correcto.
+    if (_cajaMovimientos.containsKey(key)) {
+      await _cajaMovimientos.delete(key);
       notifyListeners();
     }
   }
@@ -489,7 +495,7 @@ class BalanceProvider with ChangeNotifier {
         if (Hive.isBoxOpen(movementsBoxName)) {
           box = Hive.box(movementsBoxName);
         } else {
-          box = await Hive.openBox(movementsBoxName);
+          box = await Hive.openBox<Movement>(movementsBoxName);
           needsClosing = true;
         }
 
@@ -518,7 +524,7 @@ class BalanceProvider with ChangeNotifier {
         if (Hive.isBoxOpen(balancesBoxName)) {
           box = Hive.box(balancesBoxName);
         } else {
-          box = await Hive.openBox(balancesBoxName);
+          box = await Hive.openBox<double>(balancesBoxName);
           needsClosing = true;
         }
 
@@ -553,62 +559,137 @@ class BalanceProvider with ChangeNotifier {
   Future<String> exportarAPdf() async => exportToPdf();
 
   Future<String> exportToPdf() async {
-    final pdf = pw.Document();
+    // Cargar las fuentes TTF desde los assets
+    final fontData = await rootBundle.load("assets/fonts/Roboto-Regular.ttf");
+    final boldFontData = await rootBundle.load("assets/fonts/Roboto-Bold.ttf");
+    final ttf = pw.Font.ttf(fontData.buffer.asByteData());
+    final boldTtf = pw.Font.ttf(boldFontData.buffer.asByteData());
+
+    final pdf = pw.Document(
+      theme: pw.ThemeData.withFont(
+        base: ttf,
+        bold: boldTtf,
+      ),
+    );
     final generationDate = DateTime.now();
-    final movimientos = this.movimientos;
+    // Usamos la lista completa de movimientos, ignorando los filtros de la UI.
+    final todosLosMovimientos = _cajaMovimientos.values.toList();
+    // Opcional: Ordenar la lista para el reporte, por ejemplo, por fecha descendente.
+    todosLosMovimientos.sort((a, b) => b.date.compareTo(a.date));
 
     pdf.addPage(
-      pw.Page(
-        build: (context) => pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
-          children: [
-            pw.Center(
-              child: pw.Text('Reporte de Movimientos',
-                  style: pw.TextStyle(
-                      fontSize: 24, fontWeight: pw.FontWeight.bold)),
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        header: (pw.Context context) {
+          // Este widget se repetirá en la parte superior de cada página.
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Center(
+                child: pw.Text('Reporte de Movimientos',
+                    style: pw.TextStyle(
+                        fontSize: 24, fontWeight: pw.FontWeight.bold)),
+              ),
+              pw.Text(
+                'Perfil: $_perfilActual',
+                style: const pw.TextStyle(fontSize: 16),
+              ),
+              pw.Text(
+                  'Generado: ${generationDate.day}/${generationDate.month}/${generationDate.year} a las ${generationDate.hour}:${generationDate.minute.toString().padLeft(2, '0')}'),
+              pw.SizedBox(height: 20),
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(
+                          'Saldo Inicial Efectivo: \$${_saldoInicialEfectivo.toStringAsFixed(2)}'),
+                      pw.Text(
+                          'Saldo Actual Efectivo: \$${saldoActualEfectivo.toStringAsFixed(2)}'),
+                    ],
+                  ),
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.end,
+                    children: [
+                      pw.Text(
+                          'Saldo Inicial Digital: \$${_saldoInicialDigital.toStringAsFixed(2)}'),
+                      pw.Text(
+                          'Saldo Actual Digital: \$${saldoActualDigital.toStringAsFixed(2)}'),
+                    ],
+                  ),
+                ],
+              ),
+              pw.SizedBox(height: 20),
+            ],
+          );
+        },
+        footer: (pw.Context context) {
+          // Este widget se repetirá en la parte inferior de cada página.
+          return pw.Container(
+            alignment: pw.Alignment.centerRight,
+            margin: const pw.EdgeInsets.only(top: 1.0 * PdfPageFormat.cm),
+            child: pw.Text(
+              'Página ${context.pageNumber} de ${context.pagesCount}',
+              style: pw.Theme.of(context)
+                  .defaultTextStyle
+                  .copyWith(color: PdfColors.grey),
             ),
-            pw.Text(
-              'Perfil: $_perfilActual',
-              style: const pw.TextStyle(fontSize: 16),
-            ),
-            pw.Text(
-                'Generado: ${generationDate.day}/${generationDate.month}/${generationDate.year} a las ${generationDate.hour}:${generationDate.minute.toString().padLeft(2, '0')}'),
-            pw.SizedBox(height: 20),
-            pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          );
+        },
+        build: (pw.Context context) {
+          // Esta es una lista de widgets que formarán el cuerpo principal del documento.
+          // La librería se encargará de distribuirlos en las páginas necesarias.
+          return [
+            pw.Table(
+              // 1. Bordes para toda la tabla
+              border: pw.TableBorder.all(color: PdfColors.grey600),
+
+              // 2. Anchos de columna flexibles
+              columnWidths: const {
+                0: pw.FlexColumnWidth(2), // Fecha
+                1: pw.FlexColumnWidth(4), // Concepto
+                2: pw.FlexColumnWidth(2), // Tipo
+                3: pw.FlexColumnWidth(2.5), // Monto
+              },
+
+              // 3. Construcción de la tabla
               children: [
-                pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                // 3.1 Fila del Encabezado con estilo
+                pw.TableRow(
+                  decoration: const pw.BoxDecoration(
+                    color: PdfColors.grey300,
+                  ),
                   children: [
-                    pw.Text(
-                        'Saldo Inicial Efectivo: \$${_saldoInicialEfectivo.toStringAsFixed(2)}'),
-                    pw.Text(
-                        'Saldo Actual Efectivo: \$${saldoActualEfectivo.toStringAsFixed(2)}'),
+                    _buildHeaderCell('Fecha'),
+                    _buildHeaderCell('Concepto'),
+                    _buildHeaderCell('Tipo'),
+                    _buildHeaderCell('Monto',
+                        alignment: pw.Alignment.centerRight),
                   ],
                 ),
-                pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.end,
-                  children: [
-                    pw.Text(
-                        'Saldo Inicial Digital: \$${_saldoInicialDigital.toStringAsFixed(2)}'),
-                    pw.Text(
-                        'Saldo Actual Digital: \$${saldoActualDigital.toStringAsFixed(2)}'),
-                  ],
-                ),
+
+                // 3.2 Filas de datos
+                // Usamos un bucle 'for' dentro de la lista para generar cada fila.
+                for (final entry in todosLosMovimientos.asMap().entries)
+                  pw.TableRow(
+                    decoration: pw.BoxDecoration(
+                      // Alternamos el color de la fila usando el índice (entry.key)
+                      color: entry.key % 2 == 0
+                          ? PdfColors.white
+                          : PdfColors.grey100,
+                    ),
+                    children: [
+                      _buildCell(
+                          '${entry.value.date.day}/${entry.value.date.month}/${entry.value.date.year}'),
+                      _buildCell(entry.value.concept),
+                      _buildCell(
+                          entry.value.isDigital ? 'Digital' : 'Efectivo'),
+                      _buildCell('\$${entry.value.amount.toStringAsFixed(2)}',
+                          alignment: pw.Alignment.centerRight),
+                    ],
+                  )
               ],
-            ),
-            pw.SizedBox(height: 20),
-            pw.TableHelper.fromTextArray(
-              context: context,
-              headers: ['Fecha', 'Concepto', 'Tipo', 'Monto'],
-              data: movimientos
-                  .map((movement) => [
-                        '${movement.date.day}/${movement.date.month}/${movement.date.year}',
-                        movement.concept,
-                        movement.isDigital ? 'Digital' : 'Efectivo',
-                        '\$${movement.amount.toStringAsFixed(2)}',
-                      ])
-                  .toList(),
             ),
             pw.SizedBox(height: 20),
             pw.Divider(),
@@ -624,9 +705,9 @@ class BalanceProvider with ChangeNotifier {
                 ),
               ],
             ),
-          ],
-        ),
-      ),
+          ];
+        },
+      ), // Fin de MultiPage
     );
 
     final formattedDateTime =
@@ -636,7 +717,52 @@ class BalanceProvider with ChangeNotifier {
         '${output.path}/movimientos_${_perfilActual}_$formattedDateTime.pdf');
     await file.writeAsBytes(await pdf.save());
 
-    OpenFile.open(file.path);
+    // Añadimos una pequeña demora para asegurar que el sistema de archivos
+    // haya liberado el archivo antes de intentar abrirlo. Esto previene
+    // condiciones de carrera, especialmente con archivos grandes.
+    await Future.delayed(const Duration(milliseconds: 200));
+
+    final result = await OpenFile.open(file.path);
+
+    // Opcional: Manejar el caso en que el archivo no se pueda abrir.
+    if (result.type != ResultType.done) {
+      // Si no se pudo abrir (ej. no hay visor de PDF), lanzamos una excepción
+      // para que la UI pueda informar al usuario.
+      throw Exception(
+          'No se pudo abrir el archivo PDF automáticamente: ${result.message}');
+    }
+
     return file.path;
+  }
+
+  // --- Funciones de ayuda para construir celdas de la tabla PDF ---
+
+  pw.Widget _buildHeaderCell(String text,
+      {pw.Alignment alignment = pw.Alignment.centerLeft}) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.all(6),
+      child: pw.Text(
+        text,
+        style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+        textAlign: _getpwTextAlign(alignment),
+      ),
+    );
+  }
+
+  pw.Widget _buildCell(String text,
+      {pw.Alignment alignment = pw.Alignment.centerLeft}) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.all(6),
+      child: pw.Text(
+        text,
+        textAlign: _getpwTextAlign(alignment),
+      ),
+    );
+  }
+
+  pw.TextAlign _getpwTextAlign(pw.Alignment alignment) {
+    if (alignment == pw.Alignment.center) return pw.TextAlign.center;
+    if (alignment == pw.Alignment.centerRight) return pw.TextAlign.right;
+    return pw.TextAlign.left;
   }
 }
