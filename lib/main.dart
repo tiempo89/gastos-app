@@ -44,9 +44,26 @@ class MiAplicacion extends StatelessWidget {
     return MaterialApp(
       title: 'Gestor de Dinero',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+        // Vamos a definir un ColorScheme personalizado para el tema claro
+        colorScheme: ColorScheme(
+          brightness: Brightness.light, // Mantenemos que es un tema claro
+          primary: const Color(0xFF006A60), // Color principal (ej. AppBar)
+          onPrimary: Colors.white, // Color del texto sobre el primario
+          primaryContainer: const Color(
+              0xFF74F8E9), // Contenedor del primario (ej. DrawerHeader)
+          onPrimaryContainer:
+              const Color.fromARGB(255, 32, 21, 0), // Texto sobre el contenedor primario
+          secondary: const Color(0xFF4A635F), // Color secundario para acentos
+          onSecondary: Colors.white, // Texto sobre el secundario
+          surface:
+              const Color.fromARGB(255, 237, 238, 237), // Color de fondo para Cards, Dialogs
+          onSurface: const Color(0xFF171D1C), // Color del texto principal
+          error: const Color(0xFFBA1A1A), // Color para errores
+          onError: Colors.white, // Texto sobre el color de error
+        ),
         useMaterial3: true,
-        brightness: Brightness.light,
+        scaffoldBackgroundColor:
+            const Color.fromARGB(255, 212, 226, 223), // Color de fondo general de la app
         appBarTheme: const AppBarTheme(
           centerTitle: true,
         ),
