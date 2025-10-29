@@ -49,8 +49,7 @@ class MiAplicacion extends StatelessWidget {
           brightness: Brightness.light, // Mantenemos que es un tema claro
           primary: const Color(0xFF006A60), // Color principal (ej. AppBar)
           onPrimary: Colors.white, // Color del texto sobre el primario
-          primaryContainer: const Color(
-              0xFF74F8E9), // Contenedor del primario (ej. DrawerHeader)
+          primaryContainer: const Color.fromARGB(255, 86, 207, 171), // Contenedor del primario (ej. DrawerHeader)
           onPrimaryContainer:
               const Color.fromARGB(255, 32, 21, 0), // Texto sobre el contenedor primario
           secondary: const Color(0xFF4A635F), // Color secundario para acentos
