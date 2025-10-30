@@ -43,6 +43,7 @@ class BalanceProvider with ChangeNotifier {
   double _saldoInicialEfectivo = 0.0;
   double _saldoInicialDigital = 0.0;
   bool _esModoOscuro = false;
+  String? _rutaDeBackup;
   Ordenamiento _ordenamiento = Ordenamiento.fechaDescendente;
 
   // Getters públicos
@@ -56,6 +57,7 @@ class BalanceProvider with ChangeNotifier {
   double get currentDigitalBalance => saldoActualDigital;
   double get currentBalance => saldoActual;
 
+  String? get rutaDeBackup => _rutaDeBackup;
   // Getters para filtros
   FiltroTipo get filtroTipo => _filtroTipo;
   FiltroOperacion get filtroOperacion => _filtroOperacion;
@@ -164,22 +166,25 @@ class BalanceProvider with ChangeNotifier {
       _cajaConfiguracion = await Hive.openBox('settings');
       _cajaPerfiles = await Hive.openBox<String>('profiles');
 
+      _rutaDeBackup = _cajaConfiguracion.get('backupPath');
       _esModoOscuro = _cajaConfiguracion.get('isDarkMode', defaultValue: false);
       _ordenamiento = Ordenamiento.values[_cajaConfiguracion.get('sortOrder',
           defaultValue: Ordenamiento.fechaDescendente.index)];
 
       _perfiles = _cajaPerfiles.values.toList();
       if (_perfiles.isEmpty) {
-        _perfilActual = 'ninguno';
+        // Si no hay perfiles, creamos uno por defecto para evitar errores.
+        await crearPerfil('Principal');
+        _perfilActual = 'Principal';
       } else {
         _perfilActual = _cajaConfiguracion.get('currentProfile',
             defaultValue: _perfiles.first);
       }
 
+      // Asegurarse de que el perfil actual sea válido
       if (_perfiles.isNotEmpty && !_perfiles.contains(_perfilActual)) {
         _perfilActual = _perfiles.first;
       }
-
       // Inicializar las cajas antes de abrir el perfil
       _cajaMovimientos =
           await Hive.openBox<Movement>('movements_$_perfilActual');
@@ -232,6 +237,12 @@ class BalanceProvider with ChangeNotifier {
   void alternarTema() {
     _esModoOscuro = !_esModoOscuro;
     _cajaConfiguracion.put('isDarkMode', _esModoOscuro);
+    notifyListeners();
+  }
+
+  Future<void> establecerRutaDeBackup(String ruta) async {
+    _rutaDeBackup = ruta;
+    await _cajaConfiguracion.put('backupPath', ruta);
     notifyListeners();
   }
 
@@ -367,7 +378,10 @@ class BalanceProvider with ChangeNotifier {
           await _cajaConfiguracion.put('currentProfile', _perfilActual);
           await _abrirCajasDelPerfil();
         } else {
-          _perfilActual = 'ninguno';
+          // Si se elimina el último perfil, la lista de perfiles estará vacía.
+          // Dejamos el perfil actual como estaba, pero la UI debería forzar
+          // la creación de un nuevo perfil.
+          _perfilActual = ''; // Se establece a vacío.
           await _cajaConfiguracion.put('currentProfile', _perfilActual);
           await _abrirCajasDelPerfil();
         }
@@ -477,7 +491,8 @@ class BalanceProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<String> exportProfileBackup(String profile) async {
+  Future<String> exportProfileBackup(String profile,
+      {String? outputPath}) async {
     if (!_perfiles.contains(profile)) {
       throw Exception('El perfil $profile no existe');
     }
@@ -485,6 +500,9 @@ class BalanceProvider with ChangeNotifier {
     final Map<String, dynamic> data = {};
     final movementsBoxName = 'movements_$profile';
     final balancesBoxName = 'balances_$profile';
+    final String finalOutputPath = outputPath ??
+        _rutaDeBackup ??
+        (await getApplicationDocumentsDirectory()).path;
 
     try {
       // Exportar movimientos
@@ -543,10 +561,9 @@ class BalanceProvider with ChangeNotifier {
       data['profile'] = profile;
       data['exportedAt'] = DateTime.now().toIso8601String();
 
-      final output = await getApplicationDocumentsDirectory();
       final filename =
           'gastos_backup_${profile}_${DateTime.now().millisecondsSinceEpoch}.json';
-      final file = File('${output.path}/$filename');
+      final file = File('$finalOutputPath/$filename');
       await file.writeAsString(jsonEncode(data));
       return file.path;
     } catch (e) {

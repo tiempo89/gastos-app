@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:gastos/models/movement.dart';
 import 'package:file_picker/file_picker.dart';
 import 'dart:io'; // Importar la librería dart:io para la clase File
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../providers/balance_provider.dart';
 import 'package:open_file/open_file.dart';
-import '../models/movement.dart';
-import './filter_screen.dart';
 
 final _formatoNumero = NumberFormat.decimalPattern('es_ES');
 
@@ -19,380 +18,97 @@ class PantallaMovimientos extends StatefulWidget {
 }
 
 class _PantallaMovimientosState extends State<PantallaMovimientos> {
-  final TextEditingController _controladorConcepto = TextEditingController();
-  final TextEditingController _controladorMonto = TextEditingController();
-  bool _esMovimientoDigital = false;
-
   @override
-  void dispose() {
-    _controladorConcepto.dispose();
-    _controladorMonto.dispose();
-    super.dispose();
-  }
-
-  void _mostrarDialogoCrearPerfil(BuildContext context) {
-    final TextEditingController controller = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Crear nuevo perfil'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(labelText: 'Nombre del perfil'),
-          autofocus: true,
-          textCapitalization: TextCapitalization.words,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          TextButton(
-            onPressed: () {
-              final name = controller.text;
-              if (name.isNotEmpty) {
-                Provider.of<BalanceProvider>(context, listen: false)
-                    .crearPerfil(name);
-                Navigator.pop(context); // Close dialog
-                if (Navigator.canPop(context)) {
-                  Navigator.pop(context); // Close drawer
-                }
-              }
-            },
-            child: const Text('Crear'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Nota: la lógica de eliminación se maneja ahora dentro del IconButton de cada perfil.
-
-  void _mostrarDialogoEditarPerfil(
-      BuildContext context, String oldProfileName) {
-    final TextEditingController controller =
-        TextEditingController(text: oldProfileName);
-    controller.selection =
-        TextSelection(baseOffset: 0, extentOffset: controller.text.length);
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Editar nombre del perfil'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(labelText: 'Nuevo nombre'),
-          autofocus: true,
-          textCapitalization: TextCapitalization.words,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          TextButton(
-            onPressed: () {
-              final newName = controller.text;
-              Provider.of<BalanceProvider>(context, listen: false)
-                  .editarNombrePerfil(oldProfileName, newName);
-              Navigator.pop(context);
-            },
-            child: const Text('Guardar'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _mostrarDialogoEditarSaldoInicial(
-      BuildContext context, bool esEfectivo) {
-    final initialValue = esEfectivo
-        ? Provider.of<BalanceProvider>(context, listen: false)
-            .saldoInicialEfectivo
-        : Provider.of<BalanceProvider>(context, listen: false)
-            .saldoInicialDigital;
-
-    final TextEditingController controller = TextEditingController(
-      text: initialValue.toString(),
-    );
-    controller.selection = TextSelection(
-      baseOffset: 0,
-      extentOffset: controller.text.length,
-    );
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title:
-            Text('Modificar saldo ${esEfectivo ? "en efectivo" : "digital"}'),
-        content: TextField(
-          controller: controller,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: InputDecoration(
-            labelText: 'Saldo',
-            prefixText: '\$',
-            prefixIcon: Icon(
-              esEfectivo ? Icons.money : Icons.account_balance_wallet,
-              color: esEfectivo ? Colors.green : Colors.blue,
-            ),
-          ),
-          autofocus: true,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          TextButton(
-            onPressed: () {
-              final amount = double.tryParse(controller.text) ?? 0.0;
-              if (esEfectivo) {
-                Provider.of<BalanceProvider>(context, listen: false)
-                    .establecerSaldoInicialEfectivo(amount);
-              } else {
-                Provider.of<BalanceProvider>(context, listen: false)
-                    .establecerSaldoInicialDigital(amount);
-              }
-              Navigator.pop(context);
-            },
-            child: const Text('Guardar'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _mostrarDialogoEditarMovimiento(
-      BuildContext context, Movement movement) {
-    final TextEditingController amountController =
-        TextEditingController(text: movement.amount.toString());
-    final TextEditingController conceptController =
-        TextEditingController(text: movement.concept);
-    DateTime selectedDate = movement.date;
-    amountController.selection = TextSelection(
-      baseOffset: 0,
-      extentOffset: amountController.text.length,
-    );
-    bool isDigital = movement.isDigital;
-
-    showDialog(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            Future<void> selectDate(BuildContext context) async {
-              final DateTime? picked = await showDatePicker(
-                context: context,
-                initialDate: selectedDate,
-                firstDate: DateTime(
-                    2000), // Establece una fecha lejana para evitar errores
-                lastDate: DateTime(2099),
-                // Usamos el builder para forzar que la semana empiece en domingo
-                builder: (context, child) {
-                  return Localizations.override(
-                    context: context,
-                    // 'es_US' usa el domingo como primer día de la semana
-                    locale: const Locale('es', 'US'),
-                    child: child,
-                  );
-                },
-              );
-              if (picked != null && picked != selectedDate) {
-                setState(() {
-                  selectedDate = picked;
-                });
-              }
-            }
-
-            return AlertDialog(
-              title: const Text('Editar movimiento'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    children: <Widget>[
-                      Text(DateFormat('dd/MM/yyyy hh:mm')
-                          .format(selectedDate.toLocal())),
-                      IconButton(
-                        icon: const Icon(Icons.calendar_today),
-                        onPressed: () => selectDate(context),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: conceptController,
-                    decoration: const InputDecoration(
-                      labelText: 'Concepto',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: amountController,
-                    keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true, signed: true),
-                    decoration: const InputDecoration(
-                      labelText: 'Monto',
-                      border: OutlineInputBorder(),
-                      prefixText: '\$',
-                      helperText: 'Usa punto para decimales',
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  SegmentedButton<bool>(
-                    segments: const [
-                      ButtonSegment<bool>(
-                        value: false,
-                        icon: Icon(Icons.money, color: Colors.green, size: 28),
-                        label: Text('Efectivo'),
-                      ),
-                      ButtonSegment<bool>(
-                        value: true,
-                        icon: Icon(Icons.account_balance_wallet,
-                            color: Colors.blue, size: 28),
-                        label: Text('Digital'),
-                      ),
-                    ],
-                    selected: {isDigital},
-                    onSelectionChanged: (Set<bool> selected) {
-                      setState(() {
-                        isDigital = selected.first;
-                      });
-                    },
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancelar'),
-                ),
-                TextButton(
-                  onPressed: () async {
-                    final newAmount = double.tryParse(
-                            amountController.text.replaceAll(',', '.')) ??
-                        movement
-                            .amount; // Reemplaza la coma por punto para el parseo
-                    final newConcept = conceptController.text.isEmpty
-                        ? movement.concept
-                        : conceptController.text;
-
-                    final newMovement = Movement(
-                      date: selectedDate,
-                      concept: newConcept,
-                      amount: newAmount,
-                      isDigital: isDigital,
-                    );
-
-                    await Provider.of<BalanceProvider>(context, listen: false)
-                        .editarMovimiento(movement.key, newMovement);
-                    if (!context.mounted) return;
-                    Navigator.pop(context);
-                  },
-                  child: const Text('Guardar'),
-                ),
-                TextButton(
-                  onPressed: () async {
-                    await Provider.of<BalanceProvider>(context, listen: false)
-                        .eliminarMovimiento(movement.key);
-                    if (!context.mounted) return;
-                    Navigator.pop(context);
-                  },
-                  style: TextButton.styleFrom(foregroundColor: Colors.red),
-                  child: const Text('Eliminar'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
-  void _showLoadingDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      barrierDismissible:
-          false, // El usuario no puede cerrar el diálogo tocando fuera
-      builder: (BuildContext context) {
-        return const AlertDialog(
-          content: Row(
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(width: 24),
-              Text("Procesando..."),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Future<void> _importarBackup(BuildContext context) async {
-    // 1. Usar file_picker para seleccionar un archivo JSON
-    FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['json'],
-    );
-
-    if (result != null && result.files.single.path != null) {
-      // Asegurarse de que el widget sigue montado antes de usar el context.
-      if (!context.mounted) return;
-
-      // Guardamos la referencia al ScaffoldMessenger antes de la pausa asíncrona.
-      final messenger = ScaffoldMessenger.of(context);
-
-      // Asegurarse de que el widget sigue montado antes de usar context
-      if (!context.mounted) return;
-      // 2. Mostrar diálogo de carga
-      _showLoadingDialog(context);
-
-      try {
-        final provider = Provider.of<BalanceProvider>(context, listen: false);
-        final file = File(result.files.single.path!);
-        final jsonString = await file.readAsString();
-
-        // Ahora usamos la referencia al provider que obtuvimos antes del await.
-        await provider.importProfileBackup(jsonString);
-
-        // 3. Cerrar diálogo y mostrar mensaje de éxito
-        if (!context.mounted) return;
-        Navigator.pop(context); // Cierra el diálogo de carga
-        messenger.showSnackBar(
-          const SnackBar(
-            content: Text('Backup restaurado con éxito.'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      } catch (e) {
-        // 4. Cerrar diálogo y mostrar mensaje de error
-        if (!context.mounted) return;
-        Navigator.pop(context); // Cierra el diálogo de carga
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text('Error al restaurar: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
-        );
+  void initState() {
+    super.initState();
+    // Si después de la inicialización no hay perfil, forzamos la creación de uno.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final provider = Provider.of<BalanceProvider>(context, listen: false);
+      if (provider.perfilActual.isEmpty) {
+        _mostrarDialogoCrearPerfil(context, canCancel: false);
       }
-    }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final balanceProvider = Provider.of<BalanceProvider>(context);
-
     return Scaffold(
-      drawer: Drawer(
-        // Usamos una Column para tener un control más preciso del layout
+      drawer: const _PerfilesDrawer(),
+      appBar: AppBar(
+        title: const Text('Movimientos'),
+        actions: [
+          // Botón exportar PDF
+          IconButton(
+            icon: const Icon(Icons.picture_as_pdf),
+            onPressed: () async {
+              _showLoadingDialog(context, "Generando PDF...");
+              final messenger = ScaffoldMessenger.of(context);
+              final provider =
+                  Provider.of<BalanceProvider>(context, listen: false);
+
+              try {
+                final path = await provider.exportarAPdf();
+                if (!context.mounted) return;
+                Navigator.pop(context); // Cierra diálogo de carga
+
+                messenger.showSnackBar(SnackBar(
+                  content: Text('PDF generado: $path'),
+                  action: SnackBarAction(
+                    label: 'Abrir',
+                    onPressed: () => OpenFile.open(path),
+                  ),
+                ));
+              } catch (e) {
+                if (!context.mounted) return;
+                Navigator.pop(context); // Cierra diálogo de carga
+                messenger.showSnackBar(SnackBar(
+                  content: Text('Error al generar PDF: ${e.toString()}'),
+                  backgroundColor: Colors.red,
+                ));
+              }
+            },
+            tooltip: 'Exportar PDF',
+          ),
+          // Botón de filtros (eliminado para simplificar, se puede añadir de nuevo si es necesario)
+          IconButton(
+            icon: const Icon(Icons.brightness_6),
+            onPressed: () {
+              Provider.of<BalanceProvider>(context, listen: false)
+                  .alternarTema();
+            },
+            tooltip: 'Cambiar tema',
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          const _SaldosCard(),
+          const _FormularioAgregarMovimiento(),
+          const _ListaMovimientos(),
+          // Total general (ahora dentro de _SaldosCard)
+        ],
+      ),
+    );
+  }
+}
+
+// --- WIDGETS EXTRAÍDOS ---
+
+class _PerfilesDrawer extends StatelessWidget {
+  const _PerfilesDrawer();
+
+  @override
+  Widget build(BuildContext context) {
+    final balanceProvider = Provider.of<BalanceProvider>(context);
+    final perfiles = balanceProvider.perfiles;
+
+    return Drawer(
         child: Column(
           children: [
             DrawerHeader(
-              // 1. La cabecera con color sólido
               decoration: BoxDecoration(
                 color: Theme.of(context).colorScheme.primaryContainer,
-              ), // Este paréntesis estaba mal ubicado
+              ),
               child: SizedBox(
                 width: double.infinity,
                 child: Center(
@@ -407,19 +123,16 @@ class _PantallaMovimientosState extends State<PantallaMovimientos> {
                 ),
               ),
             ),
-            // 2. Usamos Expanded para que esta sección ocupe todo el espacio restante
             Expanded(
               child: Stack(
                 children: [
-                  // 1. Imagen de fondo solo para esta sección
                   Positioned.fill(
                     child: Image.asset(
-                      'assets/images/rezero 178.jpg',
+                      'assets/images/isla.jpg',
                       fit: BoxFit.cover,
                       alignment: Alignment.center,
                     ),
                   ),
-                  // 2. Capa de contraste
                   Positioned.fill(
                     child: Container(
                       color: Theme.of(context).brightness == Brightness.dark
@@ -427,12 +140,11 @@ class _PantallaMovimientosState extends State<PantallaMovimientos> {
                           : const Color.fromRGBO(255, 255, 255, 0.65),
                     ),
                   ),
-                  // 3. Lista de perfiles sobre la imagen
                   ListView(
                     padding: EdgeInsets.zero,
                     children: [
-                      ...balanceProvider.perfiles.map(
-                        (profile) => ListTile(
+                      ...perfiles.map(
+                        (profile) => _PerfilListTile(
                           title: Text(
                             profile,
                             overflow: TextOverflow.ellipsis,
@@ -441,185 +153,8 @@ class _PantallaMovimientosState extends State<PantallaMovimientos> {
                           selectedTileColor: Theme.of(context)
                               .colorScheme
                               .primary
-                              .withAlpha(77), // ~30% opacity
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(
-                                icon: const Icon(Icons.save_alt),
-                                tooltip: 'Exportar backup',
-                                onPressed: () async {
-                                  final buildContext = context;
-                                  final messenger =
-                                      ScaffoldMessenger.of(buildContext);
-
-                                  messenger.showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                          'Generando backup para "$profile"...'),
-                                    ),
-                                  );
-
-                                  try {
-                                    final bp = Provider.of<BalanceProvider>(
-                                        buildContext,
-                                        listen: false);
-                                    final path =
-                                        await bp.exportProfileBackup(profile);
-                                    messenger.showSnackBar(
-                                      SnackBar(
-                                        content:
-                                            Text('Backup guardado en: $path'),
-                                        duration: const Duration(seconds: 4),
-                                      ),
-                                    );
-                                  } catch (e) {
-                                    messenger.showSnackBar(
-                                      SnackBar(
-                                        content: Text(
-                                            'Error al exportar backup: $e'),
-                                        backgroundColor: Colors.red,
-                                      ),
-                                    );
-                                  }
-                                },
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.edit_outlined),
-                                tooltip: 'Editar nombre',
-                                onPressed: () {
-                                  Navigator.pop(context); // Close drawer
-                                  _mostrarDialogoEditarPerfil(context, profile);
-                                },
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.delete_outline,
-                                    color: Colors.red),
-                                tooltip: 'Eliminar perfil',
-                                onPressed: () async {
-                                  Navigator.pop(context); // Close drawer
-                                  final bp = Provider.of<BalanceProvider>(
-                                      context,
-                                      listen: false);
-                                  // Confirm deletion
-                                  if (!context.mounted) return;
-                                  final result =
-                                      await showDialog<Map<String, dynamic>>(
-                                    context: context,
-                                    builder: (context) {
-                                      bool shouldExport = true;
-                                      return StatefulBuilder(
-                                        builder: (context, setState) =>
-                                            AlertDialog(
-                                          title: Text(
-                                              '¿Eliminar perfil "$profile"?'),
-                                          content: Column(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              const Text(
-                                                  'Esta acción eliminará los saldos y movimientos asociados a este perfil. ¿Quieres continuar?'),
-                                              const SizedBox(height: 12),
-                                              Row(
-                                                children: [
-                                                  Checkbox(
-                                                    value: shouldExport,
-                                                    onChanged: (v) =>
-                                                        setState(() {
-                                                      shouldExport = v ?? false;
-                                                    }),
-                                                  ),
-                                                  const SizedBox(width: 8),
-                                                  const Expanded(
-                                                    child: Text(
-                                                        'Exportar backup antes de borrar (recomendado)'),
-                                                  ),
-                                                ],
-                                              ),
-                                            ],
-                                          ),
-                                          actions: [
-                                            TextButton(
-                                              onPressed: () => Navigator.pop(
-                                                  context,
-                                                  {'confirmed': false}),
-                                              child: const Text('Cancelar'),
-                                            ),
-                                            TextButton(
-                                              onPressed: () =>
-                                                  Navigator.pop(context, {
-                                                'confirmed': true,
-                                                'export': shouldExport,
-                                              }),
-                                              style: TextButton.styleFrom(
-                                                  foregroundColor: Colors.red),
-                                              child: const Text('Eliminar'),
-                                            ),
-                                          ],
-                                        ),
-                                      );
-                                    },
-                                  );
-
-                                  if (result == null ||
-                                      result['confirmed'] != true) {
-                                    return;
-                                  }
-
-                                  final bool doExport =
-                                      result['export'] == true;
-                                  final buildContext = context;
-
-                                  // Primero cambiar de perfil si es necesario
-                                  if (bp.perfilActual == profile) {
-                                    if (bp.perfiles.length > 1) {
-                                      // Cambiar a otro perfil disponible
-                                      String nuevoPerfil = bp.perfiles
-                                          .firstWhere((p) => p != profile);
-                                      await bp.cambiarPerfil(nuevoPerfil);
-                                    }
-                                  }
-
-                                  // Ahora intentar el backup si se solicitó
-                                  if (doExport) {
-                                    try {
-                                      final path =
-                                          await bp.exportProfileBackup(profile);
-                                      if (!buildContext.mounted) return;
-                                      ScaffoldMessenger.of(buildContext)
-                                          .showSnackBar(
-                                        SnackBar(
-                                          content:
-                                              Text('Backup guardado en: $path'),
-                                          duration: const Duration(seconds: 4),
-                                        ),
-                                      );
-                                    } catch (e) {
-                                      if (!buildContext.mounted) return;
-                                      ScaffoldMessenger.of(buildContext)
-                                          .showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                              'Error al exportar backup: $e'),
-                                          backgroundColor: Colors.red,
-                                        ),
-                                      );
-                                      // Si la exportación falla, abortar la eliminación para seguridad
-                                      return;
-                                    }
-                                  }
-
-                                  // Finalmente eliminar el perfil
-                                  await bp.eliminarPerfil(profile);
-
-                                  // Si no quedan perfiles, abrir el diálogo para crear uno nuevo
-                                  if (bp.perfiles.isEmpty) {
-                                    if (!buildContext.mounted) return;
-                                    _mostrarDialogoCrearPerfil(buildContext);
-                                  }
-                                },
-                              ),
-                            ],
-                          ),
+                              .withAlpha(77),
+                          profile: profile,
                           onTap: () {
                             balanceProvider.cambiarPerfil(profile);
                             Navigator.pop(context);
@@ -629,12 +164,12 @@ class _PantallaMovimientosState extends State<PantallaMovimientos> {
                       const Divider(),
                       ListTile(
                         leading: const Icon(Icons.add),
-                        title: const Text('Crear Perfil'),
+                        title: const Text('Crear perfil'),
                         onTap: () => _mostrarDialogoCrearPerfil(context),
                       ),
                       const Divider(),
                       ListTile(
-                        leading: const Icon(Icons.upload_file),
+                        leading: const Icon(Icons.file_upload),
                         title: const Text('Restaurar Backup'),
                         onTap: () => _importarBackup(context),
                       ),
@@ -645,176 +180,232 @@ class _PantallaMovimientosState extends State<PantallaMovimientos> {
             ),
           ],
         ),
-      ),
-      appBar: AppBar(
-        title: const Text('Movimientos'),
-        actions: [
-          // Botón exportar PDF
+      
+    );
+  }
+}
+class _PerfilListTile extends StatelessWidget {
+  final Widget title;
+  final bool selected;
+  final Color selectedTileColor;
+  final VoidCallback onTap;
+  final String profile;
+
+  const _PerfilListTile({
+    required this.title,
+    required this.selected,
+    required this.selectedTileColor,
+    required this.onTap,
+    required this.profile,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      title: title,
+      selected: selected,
+      selectedTileColor: selectedTileColor,
+      onTap: onTap,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
           IconButton(
-            icon: const Icon(Icons.picture_as_pdf),
-            onPressed: () async {
-              // Mostramos el diálogo de carga
-              _showLoadingDialog(context);
-
-              try {
-                final provider =
-                    Provider.of<BalanceProvider>(context, listen: false);
-                final path = await provider.exportarAPdf();
-
-                // Si llegamos aquí, todo salió bien. Cerramos el diálogo de carga.
-                if (!context.mounted) return;
-                Navigator.pop(context);
-
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                  content: Text('PDF generado: $path'),
-                  action: SnackBarAction(
-                    label: 'Abrir',
-                    onPressed: () => OpenFile.open(path),
-                  ),
-                ));
-              } catch (e) {
-                // Si hay un error, también cerramos el diálogo de carga.
-                if (!context.mounted) return;
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                  content: Text('Error al generar PDF'),
-                ));
-              }
-            },
-            tooltip: 'Exportar PDF',
-          ),
-          // Botón de filtros
-          IconButton(
-            icon: const Icon(Icons.filter_list),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const FilterScreen(),
-                ),
-              );
-            },
-            tooltip: 'Filtrar movimientos',
+            icon: const Icon(Icons.save_alt),
+            tooltip: 'Exportar backup',
+            onPressed: () => _exportarBackup(context, profile),
           ),
           IconButton(
-            icon: const Icon(Icons.brightness_6),
+            icon: const Icon(Icons.edit_outlined),
+            tooltip: 'Editar nombre',
             onPressed: () {
-              final provider =
-                  Provider.of<BalanceProvider>(context, listen: false);
-              provider.alternarTema();
+              Navigator.pop(context); // Close drawer
+              _mostrarDialogoEditarPerfil(context, profile);
             },
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_outline, color: Colors.red),
+            tooltip: 'Eliminar perfil',
+            onPressed: () => _eliminarPerfil(context, profile),
           ),
         ],
       ),
-      body: Column(
+    );
+  }
+}
+
+class _SaldosCard extends StatelessWidget {
+  const _SaldosCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final balanceProvider = Provider.of<BalanceProvider>(context);
+
+    return Card(
+      margin: const EdgeInsets.all(16),
+      child: Column(
         children: [
-          // Tarjeta superior con saldos
-          Card(
-            margin: const EdgeInsets.all(16),
-            child: Column(
+          // Efectivo
+          InkWell(
+            onTap: () => _mostrarDialogoEditarSaldoInicial(context, true),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.money, color: Colors.green),
+                      SizedBox(width: 8),
+                      Text("Efectivo", style: TextStyle(fontSize: 16)),
+                    ],
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        "Inicial: \$${_formatoNumero.format(balanceProvider.saldoInicialEfectivo)}",
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        "\$${_formatoNumero.format(balanceProvider.saldoActualEfectivo)}",
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: balanceProvider.currentCashBalance >= 0
+                              ? Colors.green
+                              : Colors.red,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const Divider(height: 1),
+          // Digital
+          InkWell(
+            onTap: () => _mostrarDialogoEditarSaldoInicial(context, false),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.account_balance_wallet, color: Colors.blue),
+                      SizedBox(width: 8),
+                      Text("Digital", style: TextStyle(fontSize: 16)),
+                    ],
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        "Inicial: \$${_formatoNumero.format(balanceProvider.saldoInicialDigital)}",
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        "\$${_formatoNumero.format(balanceProvider.saldoActualDigital)}",
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: balanceProvider.currentDigitalBalance >= 0
+                              ? Colors.green
+                              : Colors.red,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const Divider(height: 1),
+          // Total
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Row(
               children: [
-                // Efectivo
-                InkWell(
-                  onTap: () => _mostrarDialogoEditarSaldoInicial(context, true),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Row(
-                          children: [
-                            Icon(Icons.money, color: Colors.green),
-                            SizedBox(width: 8),
-                            Text(
-                              "Efectivo",
-                              style: TextStyle(fontSize: 16),
-                            ),
-                          ],
-                        ),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text(
-                              "Inicial: \$${_formatoNumero.format(balanceProvider.saldoInicialEfectivo)}",
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              "\$${_formatoNumero.format(balanceProvider.saldoActualEfectivo)}",
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: balanceProvider.currentCashBalance >= 0
-                                    ? Colors.green
-                                    : Colors.red,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+                const Text("TOTAL",
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                const Spacer(),
+                Text(
+                  "\$${_formatoNumero.format(balanceProvider.saldoActual)}",
+                  softWrap: false,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: balanceProvider.currentBalance >= 0
+                        ? Colors.green
+                        : Colors.red,
                   ),
-                ),
-                const Divider(height: 1),
-                // Digital
-                InkWell(
-                  onTap: () =>
-                      _mostrarDialogoEditarSaldoInicial(context, false),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Row(
-                          children: [
-                            Icon(Icons.account_balance_wallet,
-                                color: Colors.blue),
-                            SizedBox(width: 8),
-                            Text(
-                              "Digital",
-                              style: TextStyle(fontSize: 16),
-                            ),
-                          ],
-                        ),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text(
-                              "Inicial: \$${_formatoNumero.format(balanceProvider.saldoInicialDigital)}",
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              "\$${_formatoNumero.format(balanceProvider.saldoActualDigital)}",
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 16,
-                                color:
-                                    balanceProvider.currentDigitalBalance >= 0
-                                        ? Colors.green
-                                        : Colors.red,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
+                  textAlign: TextAlign.right,
                 ),
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
 
-          // Formulario para agregar movimiento
-          Padding(
+class _FormularioAgregarMovimiento extends StatefulWidget {
+  const _FormularioAgregarMovimiento();
+
+  @override
+  State<_FormularioAgregarMovimiento> createState() =>
+      __FormularioAgregarMovimientoState();
+}
+
+class __FormularioAgregarMovimientoState
+    extends State<_FormularioAgregarMovimiento> {
+  final _controladorConcepto = TextEditingController();
+  final _controladorMonto = TextEditingController();
+  bool _esMovimientoDigital = false;
+
+  @override
+  void dispose() {
+    _controladorConcepto.dispose();
+    _controladorMonto.dispose();
+    super.dispose();
+  }
+
+  void _agregarMovimiento() {
+    final balanceProvider =
+        Provider.of<BalanceProvider>(context, listen: false);
+    final concept = _controladorConcepto.text;
+    final amount =
+        double.tryParse(_controladorMonto.text.replaceAll(',', '.')) ?? 0.0;
+
+    if (concept.isNotEmpty) {
+      balanceProvider.agregarMovimiento(
+        Movement(
+          date: DateTime.now(),
+          concept: concept,
+          amount: amount,
+          isDigital: _esMovimientoDigital,
+        ),
+      );
+
+      setState(() {
+        _controladorConcepto.clear();
+        _controladorMonto.clear();
+        FocusScope.of(context).unfocus();
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16.0),
             child: Column(
               children: [
@@ -828,11 +419,10 @@ class _PantallaMovimientosState extends State<PantallaMovimientos> {
                 const SizedBox(height: 10),
                 Row(
                   children: [
-                    Expanded(
-                      child: TextField(
+                    Expanded(child: TextField(
                         controller: _controladorMonto,
                         keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true),
+                            decimal: true, signed: true),
                         inputFormatters: [
                           FilteringTextInputFormatter.allow(
                               RegExp(r'[0-9\.\-]'))
@@ -842,8 +432,7 @@ class _PantallaMovimientosState extends State<PantallaMovimientos> {
                           border: OutlineInputBorder(),
                           prefixText: "\$",
                           helperText: "Usa coma para decimales",
-                        ),
-                      ),
+                        ),),
                     ),
                     const SizedBox(width: 10),
                     SegmentedButton<bool>(
@@ -879,28 +468,7 @@ class _PantallaMovimientosState extends State<PantallaMovimientos> {
                   children: [
                     Expanded(
                       child: ElevatedButton(
-                        onPressed: () {
-                          final concept = _controladorConcepto.text;
-                          final amount = double.tryParse(_controladorMonto.text
-                                  .replaceAll(',', '.')) ??
-                              0.0;
-
-                          if (concept.isNotEmpty) {
-                            balanceProvider.agregarMovimiento(
-                              Movement(
-                                date: DateTime.now(),
-                                concept: concept,
-                                amount: amount,
-                                isDigital: _esMovimientoDigital,
-                              ),
-                            );
-
-                            setState(() {
-                              _controladorConcepto.clear();
-                              _controladorMonto.clear();
-                            });
-                          }
-                        },
+                        onPressed: _agregarMovimiento,
                         child: const Text("Agregar movimiento"),
                       ),
                     ),
@@ -920,7 +488,8 @@ class _PantallaMovimientosState extends State<PantallaMovimientos> {
                                 child: const Text('Cancelar'),
                               ),
                               TextButton(
-                                onPressed: () {
+                                onPressed: () { 
+                                  final balanceProvider = Provider.of<BalanceProvider>(context, listen: false);
                                   balanceProvider.limpiarMovimientos();
                                   Navigator.pop(context);
                                   ScaffoldMessenger.of(context).showSnackBar(
@@ -947,10 +516,18 @@ class _PantallaMovimientosState extends State<PantallaMovimientos> {
                 ),
               ],
             ),
-          ),
+          );
+  }
+}
 
-          // Lista de movimientos con fondo de imagen
-          Expanded(
+class _ListaMovimientos extends StatelessWidget {
+  const _ListaMovimientos();
+
+  @override
+  Widget build(BuildContext context) {
+    final balanceProvider = Provider.of<BalanceProvider>(context);
+
+    return Expanded(
             child: Stack(
               children: [
                 // Imagen de fondo
@@ -971,6 +548,7 @@ class _PantallaMovimientosState extends State<PantallaMovimientos> {
                 // Lista de movimientos encima
                 Positioned.fill(
                   child: ListView.builder(
+                    padding: const EdgeInsets.only(top: 8),
                     itemCount: balanceProvider.movimientos.length,
                     itemBuilder: (context, index) {
                       final movement = balanceProvider.movimientos[index];
@@ -984,8 +562,8 @@ class _PantallaMovimientosState extends State<PantallaMovimientos> {
                             : const Color.fromRGBO(255, 255, 255, 0.55),
                         elevation: 1,
                         child: InkWell(
-                          onLongPress: () => _mostrarDialogoEditarMovimiento(
-                              context, movement),
+                          onLongPress: () =>
+                              _mostrarDialogoEditarMovimiento(context, movement),
                           child: Padding(
                             padding: const EdgeInsets.all(8.0),
                             child: Row(
@@ -997,8 +575,7 @@ class _PantallaMovimientosState extends State<PantallaMovimientos> {
                                     color: (movement.isDigital
                                             ? Colors.blue
                                             : Colors.green)
-                                        .withAlpha(balanceProvider.esModoOscuro
-                                            ? 51
+                                        .withAlpha(balanceProvider.esModoOscuro ? 51
                                             : 26),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
@@ -1081,41 +658,436 @@ class _PantallaMovimientosState extends State<PantallaMovimientos> {
                 ),
               ],
             ),
+          );
+  }
+}
+
+// --- FUNCIONES DE DIÁLOGO Y LÓGICA DE BOTONES (fuera de las clases de widget) ---
+
+void _showLoadingDialog(BuildContext context, String message) {
+  showDialog(
+    context: context,
+    barrierDismissible:
+        false, // El usuario no puede cerrar el diálogo tocando fuera
+    builder: (BuildContext context) {
+      return AlertDialog(
+        content: Row(
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(width: 24),
+            Text(message),
+          ],
+        ),
+      );
+    },
+  );
+}
+
+Future<void> _importarBackup(BuildContext context) async {
+  // 1. Usar file_picker para seleccionar un archivo JSON
+  FilePickerResult? result = await FilePicker.platform.pickFiles(
+    type: FileType.custom,
+    allowedExtensions: ['json'],
+  );
+
+  if (result != null && result.files.single.path != null) {
+    // Asegurarse de que el widget sigue montado antes de usar el context.
+    if (!context.mounted) return;
+
+    // Guardamos la referencia al ScaffoldMessenger antes de la pausa asíncrona.
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+
+    _showLoadingDialog(context, "Restaurando backup...");
+
+    try {
+      final provider = Provider.of<BalanceProvider>(context, listen: false);
+      final file = File(result.files.single.path!);
+      final jsonString = await file.readAsString();
+
+      // Ahora usamos la referencia al provider que obtuvimos antes del await.
+      await provider.importProfileBackup(jsonString);
+
+      // 3. Cerrar diálogo y mostrar mensaje de éxito
+      if (navigator.canPop()) {
+        navigator.pop(); // Cierra el diálogo de carga
+      }
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Backup restaurado con éxito.'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      // 4. Cerrar diálogo y mostrar mensaje de error
+      if (navigator.canPop()) {
+        navigator.pop(); // Cierra el diálogo de carga
+      }
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Error al restaurar: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+}
+
+void _mostrarDialogoCrearPerfil(BuildContext context, {bool canCancel = true}) {
+  final controller = TextEditingController();
+  showDialog(
+    context: context,
+    barrierDismissible: canCancel,
+    builder: (context) => AlertDialog(
+      title: const Text('Crear nuevo perfil'),
+      content: TextField(
+        controller: controller,
+        decoration: const InputDecoration(labelText: 'Nombre del perfil'),
+        autofocus: true,
+        textCapitalization: TextCapitalization.words,
+      ),
+      actions: [
+        if (canCancel)
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
           ),
-          // Total general (al final)
-          Card(
-            margin: const EdgeInsets.all(16),
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Row(
+        TextButton(
+          onPressed: () {
+            final name = controller.text;
+            if (name.isNotEmpty) {
+              Provider.of<BalanceProvider>(context, listen: false)
+                  .crearPerfil(name);
+              Navigator.pop(context); // Cierra diálogo
+            }
+          },
+          child: const Text('Crear'),
+        ),
+      ],
+    ),
+  );
+}
+
+void _mostrarDialogoEditarPerfil(BuildContext context, String oldProfileName) {
+  final controller = TextEditingController(text: oldProfileName);
+  controller.selection =
+      TextSelection(baseOffset: 0, extentOffset: controller.text.length);
+
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Editar nombre del perfil'),
+      content: TextField(
+        controller: controller,
+        decoration: const InputDecoration(labelText: 'Nuevo nombre'),
+        autofocus: true,
+        textCapitalization: TextCapitalization.words,
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        TextButton(
+          onPressed: () {
+            final newName = controller.text;
+            Provider.of<BalanceProvider>(context, listen: false)
+                .editarNombrePerfil(oldProfileName, newName);
+            Navigator.pop(context);
+          },
+          child: const Text('Guardar'),
+        ),
+      ],
+    ),
+  );
+}
+
+Future<void> _exportarBackup(BuildContext context, String profile) async {
+  final bp = Provider.of<BalanceProvider>(context, listen: false);
+  final messenger = ScaffoldMessenger.of(context);
+  String? outputPath = bp.rutaDeBackup;
+
+  if (outputPath == null) {
+    outputPath = await FilePicker.platform.getDirectoryPath(
+      dialogTitle: 'Selecciona una carpeta para guardar el backup',
+    );
+
+    if (outputPath == null) {
+      messenger.showSnackBar(const SnackBar(
+          content: Text(
+              'Exportación cancelada. No se seleccionó ninguna carpeta.')));
+      return;
+    }
+    await bp.establecerRutaDeBackup(outputPath);
+  }
+
+  messenger.showSnackBar(SnackBar(
+    content: Text('Generando backup para "$profile"...'),
+  ));
+
+  try {
+    final path = await bp.exportProfileBackup(profile);
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('Backup guardado en: $path'),
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  } catch (e) {
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('Error al exportar backup: $e'),
+        backgroundColor: Colors.red,
+      ),
+    );
+  }
+}
+
+Future<void> _eliminarPerfil(BuildContext context, String profile) async {
+  // Capturamos el contexto principal de la pantalla de forma segura.
+  final mainScreenContext = context;
+  final messenger = ScaffoldMessenger.of(mainScreenContext);
+  final bp = Provider.of<BalanceProvider>(mainScreenContext, listen: false);
+
+  Navigator.pop(mainScreenContext); // Cierra el drawer
+
+  final result = await showDialog<Map<String, dynamic>>(
+    context: mainScreenContext,
+    builder: (dialogContext) {
+      bool shouldExport = true;
+      return StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: Text('¿Eliminar perfil "$profile"?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                  'Esta acción no se puede deshacer. ¿Quieres continuar?'),
+              const SizedBox(height: 12),
+              Row(
                 children: [
-                  const Text(
-                    "TOTAL",
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  Checkbox(
+                    value: shouldExport,
+                    onChanged: (v) => setState(() => shouldExport = v ?? false),
                   ),
-                  const Spacer(),
-                  Text(
-                    "\$${_formatoNumero.format(balanceProvider.saldoActual)}",
-                    softWrap: false,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: balanceProvider.currentBalance >= 0
-                          ? Colors.green
-                          : Colors.red,
-                    ),
-                    textAlign: TextAlign.right,
+                  const Expanded(
+                      child: Text('Exportar backup antes (recomendado)')),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () =>
+                  Navigator.pop(dialogContext, {'confirmed': false}),
+              child: const Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext,
+                  {'confirmed': true, 'export': shouldExport}),
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('Eliminar'),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+
+  if (result == null || result['confirmed'] != true) return;
+
+  final bool doExport = result['export'] == true;
+
+  if (doExport) {
+    try {
+      final path = await bp.exportProfileBackup(profile);
+      messenger.showSnackBar(SnackBar(
+        content: Text('Backup guardado en: $path'),
+        duration: const Duration(seconds: 4),
+      ));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(
+        content: Text('Error al exportar backup: $e. Eliminación abortada.'),
+        backgroundColor: Colors.red,
+      ));
+      return; // Abortar si el backup falla
+    }
+  }
+
+  await bp.eliminarPerfil(profile);
+
+  // Si después de eliminar, el perfil actual está vacío (porque era el último),
+  // forzamos la creación de uno nuevo.
+  if (bp.perfilActual.isEmpty && mainScreenContext.mounted) {
+    _mostrarDialogoCrearPerfil(mainScreenContext, canCancel: false);
+  }
+}
+
+void _mostrarDialogoEditarSaldoInicial(BuildContext context, bool esEfectivo) {
+  final provider = Provider.of<BalanceProvider>(context, listen: false);
+  final initialValue =
+      esEfectivo ? provider.saldoInicialEfectivo : provider.saldoInicialDigital;
+
+  final controller = TextEditingController(text: initialValue.toString());
+  controller.selection =
+      TextSelection(baseOffset: 0, extentOffset: controller.text.length);
+
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text('Modificar saldo ${esEfectivo ? "en efectivo" : "digital"}'),
+      content: TextField(
+        controller: controller,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        decoration: InputDecoration(
+          labelText: 'Saldo',
+          prefixText: '\$',
+          prefixIcon: Icon(
+            esEfectivo ? Icons.money : Icons.account_balance_wallet,
+            color: esEfectivo ? Colors.green : Colors.blue,
+          ),
+        ),
+        autofocus: true,
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        TextButton(
+          onPressed: () {
+            final amount = double.tryParse(controller.text) ?? 0.0;
+            if (esEfectivo) {
+              provider.establecerSaldoInicialEfectivo(amount);
+            } else {
+              provider.establecerSaldoInicialDigital(amount);
+            }
+            Navigator.pop(context);
+          },
+          child: const Text('Guardar'),
+        ),
+      ],
+    ),
+  );
+}
+
+void _mostrarDialogoEditarMovimiento(BuildContext context, Movement movement) {
+  final amountController = TextEditingController(text: movement.amount.toString());
+  final conceptController = TextEditingController(text: movement.concept);
+  DateTime selectedDate = movement.date;
+  bool isDigital = movement.isDigital;
+
+  showDialog(
+    context: context,
+    builder: (context) {
+      return StatefulBuilder(
+        builder: (context, setState) {
+          Future<void> selectDate() async {
+            final picked = await showDatePicker(
+              context: context,
+              initialDate: selectedDate,
+              firstDate: DateTime(2000),
+              lastDate: DateTime(2099),
+            );
+            if (picked != null && picked != selectedDate) {
+              setState(() => selectedDate = picked);
+            }
+          }
+
+          return AlertDialog(
+            title: const Text('Editar movimiento'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: <Widget>[
+                      Text(DateFormat('dd/MM/yyyy').format(selectedDate.toLocal())),
+                      IconButton(
+                        icon: const Icon(Icons.calendar_today),
+                        onPressed: selectDate,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: conceptController,
+                    decoration: const InputDecoration(
+                        labelText: 'Concepto', border: OutlineInputBorder()),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: amountController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true, signed: true),
+                    decoration: const InputDecoration(
+                        labelText: 'Monto',
+                        border: OutlineInputBorder(),
+                        prefixText: '\$'),
+                  ),
+                  const SizedBox(height: 16),
+                  SegmentedButton<bool>(
+                    segments: const [
+                      ButtonSegment<bool>(
+                          value: false,
+                          icon: Icon(Icons.money, color: Colors.green),
+                          label: Text('Efectivo')),
+                      ButtonSegment<bool>(
+                          value: true,
+                          icon: Icon(Icons.account_balance_wallet,
+                              color: Colors.blue),
+                          label: Text('Digital')),
+                    ],
+                    selected: {isDigital},
+                    onSelectionChanged: (selected) =>
+                        setState(() => isDigital = selected.first),
                   ),
                 ],
               ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar'),
+              ),
+              TextButton(
+                onPressed: () async {
+                  final newAmount = double.tryParse(
+                          amountController.text.replaceAll(',', '.')) ??
+                      movement.amount;
+                  final newConcept = conceptController.text.isEmpty
+                      ? movement.concept
+                      : conceptController.text;
+
+                  final newMovement = Movement(
+                      date: selectedDate,
+                      concept: newConcept,
+                      amount: newAmount,
+                      isDigital: isDigital);
+
+                  final provider =
+                      Provider.of<BalanceProvider>(context, listen: false);
+                  await provider.editarMovimiento(movement.key, newMovement);
+                  if (!context.mounted) return;
+                  Navigator.pop(context);
+                },
+                child: const Text('Guardar'),
+              ),
+              TextButton(
+                onPressed: () async {
+                  final provider =
+                      Provider.of<BalanceProvider>(context, listen: false);
+                  await provider.eliminarMovimiento(movement.key);
+                  if (!context.mounted) return;
+                  Navigator.pop(context);
+                },
+                style: TextButton.styleFrom(foregroundColor: Colors.red),
+                child: const Text('Eliminar'),
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
 }
