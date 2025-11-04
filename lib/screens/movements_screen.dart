@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../providers/balance_provider.dart';
 import 'package:open_file/open_file.dart';
+import 'filter_screen.dart';
 
 final _formatoNumero = NumberFormat.decimalPattern('es_ES');
 
@@ -69,7 +70,17 @@ class _PantallaMovimientosState extends State<PantallaMovimientos> {
             },
             tooltip: 'Exportar PDF',
           ),
-          // Botón de filtros (eliminado para simplificar, se puede añadir de nuevo si es necesario)
+          IconButton(
+            icon: const Icon(Icons.filter_list),
+            onPressed: () {
+              // Navegamos a la pantalla de filtros dedicada
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const FilterScreen()),
+              );
+            },
+            tooltip: 'Filtrar movimientos',
+          ),
           IconButton(
             icon: const Icon(Icons.brightness_6),
             onPressed: () {
@@ -85,7 +96,7 @@ class _PantallaMovimientosState extends State<PantallaMovimientos> {
           const _SaldosCard(),
           const _FormularioAgregarMovimiento(),
           const _ListaMovimientos(),
-          // Total general (ahora dentro de _SaldosCard)
+          const _TotalBalanceBar(),
         ],
       ),
     );
@@ -103,87 +114,84 @@ class _PerfilesDrawer extends StatelessWidget {
     final perfiles = balanceProvider.perfiles;
 
     return Drawer(
-        child: Column(
-          children: [
-            DrawerHeader(
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primaryContainer,
-              ),
-              child: SizedBox(
-                width: double.infinity,
-                child: Center(
-                  child: Text(
-                    'Perfiles',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          color:
-                              Theme.of(context).colorScheme.onPrimaryContainer,
-                          fontWeight: FontWeight.bold,
-                        ),
-                  ),
+      child: Column(
+        children: [
+          DrawerHeader(
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.primaryContainer,
+            ),
+            child: SizedBox(
+              width: double.infinity,
+              child: Center(
+                child: Text(
+                  'Perfiles',
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onPrimaryContainer,
+                        fontWeight: FontWeight.bold,
+                      ),
                 ),
               ),
             ),
-            Expanded(
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: Image.asset(
-                      'assets/images/isla.jpg',
-                      fit: BoxFit.cover,
-                      alignment: Alignment.center,
-                    ),
+          ),
+          Expanded(
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: Image.asset(
+                    'assets/images/rezero 178.jpg',
+                    fit: BoxFit.cover,
+                    alignment: Alignment.center,
                   ),
-                  Positioned.fill(
-                    child: Container(
-                      color: Theme.of(context).brightness == Brightness.dark
-                          ? const Color.fromRGBO(0, 0, 0, 0.55)
-                          : const Color.fromRGBO(255, 255, 255, 0.65),
-                    ),
+                ),
+                Positioned.fill(
+                  child: Container(
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? const Color.fromRGBO(0, 0, 0, 0.55)
+                        : const Color.fromRGBO(255, 255, 255, 0.65),
                   ),
-                  ListView(
-                    padding: EdgeInsets.zero,
-                    children: [
-                      ...perfiles.map(
-                        (profile) => _PerfilListTile(
-                          title: Text(
-                            profile,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          selected: profile == balanceProvider.perfilActual,
-                          selectedTileColor: Theme.of(context)
-                              .colorScheme
-                              .primary
-                              .withAlpha(77),
-                          profile: profile,
-                          onTap: () {
-                            balanceProvider.cambiarPerfil(profile);
-                            Navigator.pop(context);
-                          },
+                ),
+                ListView(
+                  padding: EdgeInsets.zero,
+                  children: [
+                    ...perfiles.map(
+                      (profile) => _PerfilListTile(
+                        title: Text(
+                          profile,
+                          overflow: TextOverflow.ellipsis,
                         ),
+                        selected: profile == balanceProvider.perfilActual,
+                        selectedTileColor:
+                            Theme.of(context).colorScheme.primary.withAlpha(77),
+                        profile: profile,
+                        onTap: () {
+                          balanceProvider.cambiarPerfil(profile);
+                          Navigator.pop(context);
+                        },
                       ),
-                      const Divider(),
-                      ListTile(
-                        leading: const Icon(Icons.add),
-                        title: const Text('Crear perfil'),
-                        onTap: () => _mostrarDialogoCrearPerfil(context),
-                      ),
-                      const Divider(),
-                      ListTile(
-                        leading: const Icon(Icons.file_upload),
-                        title: const Text('Restaurar Backup'),
-                        onTap: () => _importarBackup(context),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+                    ),
+                    const Divider(),
+                    ListTile(
+                      leading: const Icon(Icons.add),
+                      title: const Text('Crear perfil'),
+                      onTap: () => _mostrarDialogoCrearPerfil(context),
+                    ),
+                    const Divider(),
+                    ListTile(
+                      leading: const Icon(Icons.file_upload),
+                      title: const Text('Restaurar Backup'),
+                      onTap: () => _importarBackup(context),
+                    ),
+                  ],
+                ),
+              ],
             ),
-          ],
-        ),
-      
+          ),
+        ],
+      ),
     );
   }
 }
+
 class _PerfilListTile extends StatelessWidget {
   final Widget title;
   final bool selected;
@@ -265,7 +273,8 @@ class _SaldosCard extends StatelessWidget {
                       Text(
                         "Inicial: \$${_formatoNumero.format(balanceProvider.saldoInicialEfectivo)}",
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 12, color: Colors.grey),
+                        style:
+                            const TextStyle(fontSize: 12, color: Colors.grey),
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -306,7 +315,8 @@ class _SaldosCard extends StatelessWidget {
                       Text(
                         "Inicial: \$${_formatoNumero.format(balanceProvider.saldoInicialDigital)}",
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 12, color: Colors.grey),
+                        style:
+                            const TextStyle(fontSize: 12, color: Colors.grey),
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -326,31 +336,6 @@ class _SaldosCard extends StatelessWidget {
             ),
           ),
           const Divider(height: 1),
-          // Total
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Row(
-              children: [
-                const Text("TOTAL",
-                    style:
-                        TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                const Spacer(),
-                Text(
-                  "\$${_formatoNumero.format(balanceProvider.saldoActual)}",
-                  softWrap: false,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: balanceProvider.currentBalance >= 0
-                        ? Colors.green
-                        : Colors.red,
-                  ),
-                  textAlign: TextAlign.right,
-                ),
-              ],
-            ),
-          ),
         ],
       ),
     );
@@ -406,117 +391,151 @@ class __FormularioAgregarMovimientoState
   @override
   Widget build(BuildContext context) {
     return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: Column(
-              children: [
-                TextField(
-                  controller: _controladorConcepto,
+      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+      child: Column(
+        children: [
+          TextField(
+            controller: _controladorConcepto,
+            decoration: const InputDecoration(
+              labelText: "Concepto",
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _controladorMonto,
+                  keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true, signed: true),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'[0-9\.\-]'))
+                  ],
                   decoration: const InputDecoration(
-                    labelText: "Concepto",
+                    labelText: "Monto (+ ingreso, - gasto)",
                     border: OutlineInputBorder(),
+                    prefixText: "\$",
+                    helperText: "Usa coma para decimales",
                   ),
                 ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(child: TextField(
-                        controller: _controladorMonto,
-                        keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true, signed: true),
-                        inputFormatters: [
-                          FilteringTextInputFormatter.allow(
-                              RegExp(r'[0-9\.\-]'))
-                        ],
-                        decoration: const InputDecoration(
-                          labelText: "Monto (+ ingreso, - gasto)",
-                          border: OutlineInputBorder(),
-                          prefixText: "\$",
-                          helperText: "Usa coma para decimales",
-                        ),),
+              ),
+              const SizedBox(width: 10),
+              SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment<bool>(
+                    value: false,
+                    icon: Tooltip(
+                      message: 'Efectivo',
+                      child: Icon(Icons.money, color: Colors.green, size: 28),
                     ),
-                    const SizedBox(width: 10),
-                    SegmentedButton<bool>(
-                      segments: const [
-                        ButtonSegment<bool>(
-                          value: false,
-                          icon: Tooltip(
-                            message: 'Efectivo',
-                            child: Icon(Icons.money,
-                                color: Colors.green, size: 28),
-                          ),
+                  ),
+                  ButtonSegment<bool>(
+                    value: true,
+                    icon: Tooltip(
+                      message: 'Digital',
+                      child: Icon(Icons.account_balance_wallet,
+                          color: Colors.blue, size: 28),
+                    ),
+                  ),
+                ],
+                selected: {_esMovimientoDigital},
+                onSelectionChanged: (Set<bool> newSelection) {
+                  setState(() {
+                    _esMovimientoDigital = newSelection.first;
+                  });
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: _agregarMovimiento,
+                  child: const Text("Agregar movimiento"),
+                ),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton(
+                onPressed: () {
+                  showDialog(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('¿Borrar todos los movimientos?'),
+                      content: const Text(
+                        'Esta acción no se puede deshacer y eliminará todos los movimientos. Los saldos iniciales se mantendrán.',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('Cancelar'),
                         ),
-                        ButtonSegment<bool>(
-                          value: true,
-                          icon: Tooltip(
-                            message: 'Digital',
-                            child: Icon(Icons.account_balance_wallet,
-                                color: Colors.blue, size: 28),
-                          ),
+                        TextButton(
+                          onPressed: () {
+                            final balanceProvider =
+                                Provider.of<BalanceProvider>(context,
+                                    listen: false);
+                            balanceProvider.limpiarMovimientos();
+                            Navigator.pop(context);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                    'Todos los movimientos han sido eliminados'),
+                              ),
+                            );
+                          },
+                          style:
+                              TextButton.styleFrom(foregroundColor: Colors.red),
+                          child: const Text('Borrar'),
                         ),
                       ],
-                      selected: {_esMovimientoDigital},
-                      onSelectionChanged: (Set<bool> newSelection) {
-                        setState(() {
-                          _esMovimientoDigital = newSelection.first;
-                        });
-                      },
                     ),
-                  ],
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
                 ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: _agregarMovimiento,
-                        child: const Text("Agregar movimiento"),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    ElevatedButton(
-                      onPressed: () {
-                        showDialog(
-                          context: context,
-                          builder: (context) => AlertDialog(
-                            title: const Text('¿Borrar todos los movimientos?'),
-                            content: const Text(
-                              'Esta acción no se puede deshacer y eliminará todos los movimientos. Los saldos iniciales se mantendrán.',
-                            ),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.pop(context),
-                                child: const Text('Cancelar'),
-                              ),
-                              TextButton(
-                                onPressed: () { 
-                                  final balanceProvider = Provider.of<BalanceProvider>(context, listen: false);
-                                  balanceProvider.limpiarMovimientos();
-                                  Navigator.pop(context);
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                          'Todos los movimientos han sido eliminados'),
-                                    ),
-                                  );
-                                },
-                                style: TextButton.styleFrom(
-                                    foregroundColor: Colors.red),
-                                child: const Text('Borrar'),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red,
-                      ),
-                      child: const Icon(Icons.delete_forever),
-                    ),
-                  ],
-                ),
-              ],
+                child: const Icon(Icons.delete_forever),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TotalBalanceBar extends StatelessWidget {
+  const _TotalBalanceBar();
+
+  @override
+  Widget build(BuildContext context) {
+    final balanceProvider = Provider.of<BalanceProvider>(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      child: Row(
+        children: [
+          const Text("TOTAL",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const Spacer(),
+          Text(
+            "\$${_formatoNumero.format(balanceProvider.saldoActual)}",
+            softWrap: false,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: balanceProvider.currentBalance >= 0
+                  ? Colors.green
+                  : Colors.red,
             ),
-          );
+            textAlign: TextAlign.right,
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -528,137 +547,134 @@ class _ListaMovimientos extends StatelessWidget {
     final balanceProvider = Provider.of<BalanceProvider>(context);
 
     return Expanded(
-            child: Stack(
-              children: [
-                // Imagen de fondo
-                Positioned.fill(
-                  child: Image.asset(
-                    'assets/images/frieren.jpg',
-                    fit: BoxFit.cover,
-                  ),
-                ),
-                // Capa semitransparente para mejorar contraste
-                Positioned.fill(
-                  child: Container(
-                    color: Theme.of(context).brightness == Brightness.dark
-                        ? const Color.fromRGBO(0, 0, 0, 0.45)
-                        : const Color.fromRGBO(255, 255, 255, 0.35),
-                  ),
-                ),
-                // Lista de movimientos encima
-                Positioned.fill(
-                  child: ListView.builder(
-                    padding: const EdgeInsets.only(top: 8),
-                    itemCount: balanceProvider.movimientos.length,
-                    itemBuilder: (context, index) {
-                      final movement = balanceProvider.movimientos[index];
-                      return Card(
-                        margin: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 4),
-                        // Hacemos la tarjeta semi-transparente para que se vea
-                        // la imagen de fondo de la lista.
-                        color: Theme.of(context).brightness == Brightness.dark
-                            ? const Color.fromRGBO(0, 0, 0, 0.25)
-                            : const Color.fromRGBO(255, 255, 255, 0.55),
-                        elevation: 1,
-                        child: InkWell(
-                          onLongPress: () =>
-                              _mostrarDialogoEditarMovimiento(context, movement),
-                          child: Padding(
-                            padding: const EdgeInsets.all(8.0),
-                            child: Row(
+      child: Stack(
+        children: [
+          // Imagen de fondo
+          Positioned.fill(
+            child: Image.asset(
+              'assets/images/frieren.jpg',
+              fit: BoxFit.cover,
+            ),
+          ),
+          // Capa semitransparente para mejorar contraste
+          Positioned.fill(
+            child: Container(
+              color: Theme.of(context).brightness == Brightness.dark
+                  ? const Color.fromRGBO(0, 0, 0, 0.45)
+                  : const Color.fromRGBO(255, 255, 255, 0.35),
+            ),
+          ),
+          // Lista de movimientos encima
+          Positioned.fill(
+            child: ListView.builder(
+              padding: const EdgeInsets.only(top: 8),
+              itemCount: balanceProvider.movimientos.length,
+              itemBuilder: (context, index) {
+                final movement = balanceProvider.movimientos[index];
+                return Card(
+                  margin:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  // Hacemos la tarjeta semi-transparente para que se vea
+                  // la imagen de fondo de la lista.
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? const Color.fromRGBO(0, 0, 0, 0.25)
+                      : const Color.fromRGBO(255, 255, 255, 0.55),
+                  elevation: 1,
+                  child: InkWell(
+                    onLongPress: () =>
+                        _mostrarDialogoEditarMovimiento(context, movement),
+                    child: Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: Row(
+                        children: [
+                          // Fecha y tipo de movimiento
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: (movement.isDigital
+                                      ? Colors.blue
+                                      : Colors.green)
+                                  .withAlpha(
+                                      balanceProvider.esModoOscuro ? 51 : 26),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                // Fecha y tipo de movimiento
-                                Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: (movement.isDigital
-                                            ? Colors.blue
-                                            : Colors.green)
-                                        .withAlpha(balanceProvider.esModoOscuro ? 51
-                                            : 26),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Text(
-                                        "${movement.date.day}/${movement.date.month}",
-                                        style: const TextStyle(fontSize: 14),
-                                      ),
-                                      Icon(
-                                        movement.isDigital
-                                            ? Icons.account_balance_wallet
-                                            : Icons.money,
-                                        color: movement.isDigital
-                                            ? Colors.blue
-                                            : Colors.green,
-                                        size: 16,
-                                      ),
-                                      Text(
-                                        movement.isDigital
-                                            ? 'Digital'
-                                            : 'Efectivo',
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          color: movement.isDigital
-                                              ? Colors.blue
-                                              : Colors.green,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                                Text(
+                                  "${movement.date.day}/${movement.date.month}",
+                                  style: const TextStyle(fontSize: 14),
                                 ),
-                                const SizedBox(width: 16),
-                                // Concepto y monto
-                                Expanded(
-                                  child: Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              movement.concept,
-                                              style: const TextStyle(
-                                                  fontSize: 16,
-                                                  fontWeight: FontWeight.w500),
-                                            ),
-                                            Text(
-                                              'Mantén presionado para editar',
-                                              style: TextStyle(
-                                                  fontSize: 12,
-                                                  color: Colors.grey[600]),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      Text(
-                                        "\$${_formatoNumero.format(movement.amount)}",
-                                        style: TextStyle(
-                                            fontSize: 16,
-                                            color: movement.amount >= 0
-                                                ? Colors.green
-                                                : Colors.red,
-                                            fontWeight: FontWeight.bold),
-                                      ),
-                                    ],
+                                Icon(
+                                  movement.isDigital
+                                      ? Icons.account_balance_wallet
+                                      : Icons.money,
+                                  color: movement.isDigital
+                                      ? Colors.blue
+                                      : Colors.green,
+                                  size: 16,
+                                ),
+                                Text(
+                                  movement.isDigital ? 'Digital' : 'Efectivo',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: movement.isDigital
+                                        ? Colors.blue
+                                        : Colors.green,
                                   ),
                                 ),
                               ],
                             ),
                           ),
-                        ),
-                      );
-                    },
+                          const SizedBox(width: 16),
+                          // Concepto y monto
+                          Expanded(
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        movement.concept,
+                                        style: const TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w500),
+                                      ),
+                                      Text(
+                                        'Mantén presionado para editar',
+                                        style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey[600]),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Text(
+                                  "\$${_formatoNumero.format(movement.amount)}",
+                                  style: TextStyle(
+                                      fontSize: 16,
+                                      color: movement.amount >= 0
+                                          ? Colors.green
+                                          : Colors.red,
+                                      fontWeight: FontWeight.bold),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
-                ),
-              ],
+                );
+              },
             ),
-          );
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -883,8 +899,8 @@ Future<void> _eliminarPerfil(BuildContext context, String profile) async {
               child: const Text('Cancelar'),
             ),
             TextButton(
-              onPressed: () => Navigator.pop(dialogContext,
-                  {'confirmed': true, 'export': shouldExport}),
+              onPressed: () => Navigator.pop(
+                  dialogContext, {'confirmed': true, 'export': shouldExport}),
               style: TextButton.styleFrom(foregroundColor: Colors.red),
               child: const Text('Eliminar'),
             ),
@@ -972,7 +988,8 @@ void _mostrarDialogoEditarSaldoInicial(BuildContext context, bool esEfectivo) {
 }
 
 void _mostrarDialogoEditarMovimiento(BuildContext context, Movement movement) {
-  final amountController = TextEditingController(text: movement.amount.toString());
+  final amountController =
+      TextEditingController(text: movement.amount.toString());
   final conceptController = TextEditingController(text: movement.concept);
   DateTime selectedDate = movement.date;
   bool isDigital = movement.isDigital;
@@ -1002,7 +1019,8 @@ void _mostrarDialogoEditarMovimiento(BuildContext context, Movement movement) {
                 children: [
                   Row(
                     children: <Widget>[
-                      Text(DateFormat('dd/MM/yyyy').format(selectedDate.toLocal())),
+                      Text(DateFormat('dd/MM/yyyy')
+                          .format(selectedDate.toLocal())),
                       IconButton(
                         icon: const Icon(Icons.calendar_today),
                         onPressed: selectDate,

@@ -16,7 +16,9 @@ class FilterScreen extends StatelessWidget {
           IconButton(
             icon: const Icon(Icons.clear_all),
             onPressed: () {
-              provider.limpiarFiltros();
+              // Limpiamos los filtros y cerramos la pantalla para ver el resultado.
+              Provider.of<BalanceProvider>(context, listen: false)
+                  .limpiarFiltros();
               Navigator.pop(context);
             },
             tooltip: 'Limpiar filtros',
