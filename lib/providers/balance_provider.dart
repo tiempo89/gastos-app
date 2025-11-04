@@ -304,53 +304,47 @@ class BalanceProvider with ChangeNotifier {
         await _cajaConfiguracion.put('currentProfile', recortado);
       }
 
-      // Renombrar las boxes del perfil
+      // --- Lógica de renombrado de archivos de Hive ---
+
+      // 1. Definir nombres y rutas de las cajas
       final oldMovementsBoxName = 'movements_$nombreViejo';
       final oldBalancesBoxName = 'balances_$nombreViejo';
       final newMovementsBoxName = 'movements_$recortado';
       final newBalancesBoxName = 'balances_$recortado';
 
-      // Cerrar las boxes si están abiertas
-      if (_perfilActual == nombreViejo) {
+      final path = (await getApplicationDocumentsDirectory()).path;
+
+      // 2. Cerrar las cajas si están abiertas para liberar los archivos
+      // Si estamos renombrando el perfil actual, cerramos las cajas que el provider tiene abiertas.
+      if (_perfilActual == recortado) {
         if (_cajaMovimientos.isOpen) await _cajaMovimientos.close();
         if (_cajaSaldos.isOpen) await _cajaSaldos.close();
       } else {
+        // Si es otro perfil, nos aseguramos de que las cajas no estén abiertas por alguna otra razón.
         await _cerrarBoxSiAbierta(oldMovementsBoxName);
         await _cerrarBoxSiAbierta(oldBalancesBoxName);
       }
 
-      // Copiar y renombrar las boxes
-      if (await Hive.boxExists(oldMovementsBoxName)) {
-        final oldBox = await Hive.openBox<Movement>(oldMovementsBoxName);
-        final newBox = await Hive.openBox<Movement>(newMovementsBoxName);
-
-        // Copiar todos los movimientos
-        final movements = oldBox.values.toList();
-        await newBox.addAll(movements);
-
-        await oldBox.close();
-        await newBox.close();
-        await Hive.deleteBoxFromDisk(oldMovementsBoxName);
+      // 3. Renombrar los archivos .hive y .lock directamente
+      final oldMovementsFile = File('$path/$oldMovementsBoxName.hive');
+      if (await oldMovementsFile.exists()) {
+        await oldMovementsFile.rename('$path/$newMovementsBoxName.hive');
+      }
+      final oldMovementsLockFile = File('$path/$oldMovementsBoxName.lock');
+      if (await oldMovementsLockFile.exists()) {
+        await oldMovementsLockFile.rename('$path/$newMovementsBoxName.lock');
       }
 
-      if (await Hive.boxExists(oldBalancesBoxName)) {
-        final oldBox = await Hive.openBox<double>(oldBalancesBoxName);
-        final newBox = await Hive.openBox<double>(newBalancesBoxName);
-
-        // Copiar todos los saldos
-        for (var key in oldBox.keys) {
-          final value = oldBox.get(key);
-          if (value != null) {
-            await newBox.put(key, value);
-          }
-        }
-
-        await oldBox.close();
-        await newBox.close();
-        await Hive.deleteBoxFromDisk(oldBalancesBoxName);
+      final oldBalancesFile = File('$path/$oldBalancesBoxName.hive');
+      if (await oldBalancesFile.exists()) {
+        await oldBalancesFile.rename('$path/$newBalancesBoxName.hive');
+      }
+      final oldBalancesLockFile = File('$path/$oldBalancesBoxName.lock');
+      if (await oldBalancesLockFile.exists()) {
+        await oldBalancesLockFile.rename('$path/$newBalancesBoxName.lock');
       }
 
-      // Si es el perfil actual, reabrir las boxes con el nuevo nombre
+      // 4. Si el perfil renombrado es el que estaba activo, lo reabrimos con su nuevo nombre.
       if (_perfilActual == recortado) {
         await _abrirCajasDelPerfil();
       }
@@ -366,50 +360,52 @@ class BalanceProvider with ChangeNotifier {
     if (_perfiles.isEmpty || !_perfiles.contains(nombrePerfil)) return;
 
     try {
-      // Si es el perfil actual, cambiar a otro primero
-      if (_perfilActual == nombrePerfil) {
-        // Cerrar las boxes actuales
-        if (_cajaMovimientos.isOpen) await _cajaMovimientos.close();
-        if (_cajaSaldos.isOpen) await _cajaSaldos.close();
+      // 1. Determinar cuál será el próximo perfil activo
+      String? proximoPerfilActivo;
+      bool seEliminaElPerfilActual = _perfilActual == nombrePerfil;
 
+      if (seEliminaElPerfilActual) {
         if (_perfiles.length > 1) {
-          String nuevoPerfil = _perfiles.firstWhere((p) => p != nombrePerfil);
-          _perfilActual = nuevoPerfil;
-          await _cajaConfiguracion.put('currentProfile', _perfilActual);
-          await _abrirCajasDelPerfil();
+          // Si hay más perfiles, el próximo será el primero que no sea el que se elimina.
+          proximoPerfilActivo = _perfiles.firstWhere((p) => p != nombrePerfil);
         } else {
-          // Si se elimina el último perfil, la lista de perfiles estará vacía.
-          // Dejamos el perfil actual como estaba, pero la UI debería forzar
-          // la creación de un nuevo perfil.
-          _perfilActual = ''; // Se establece a vacío.
-          await _cajaConfiguracion.put('currentProfile', _perfilActual);
-          await _abrirCajasDelPerfil();
+          // Si se elimina el último perfil, no habrá próximo perfil.
+          proximoPerfilActivo = null;
         }
       }
 
-      // Eliminar las boxes del perfil
+      // 2. Cerrar las cajas del perfil a eliminar (si están abiertas)
+      // Esto es crucial si el perfil a eliminar no es el activo.
       final movementsBoxName = 'movements_$nombrePerfil';
       final balancesBoxName = 'balances_$nombrePerfil';
-
-      // Cerrar y eliminar las boxes si existen
       await _cerrarBoxSiAbierta(movementsBoxName);
       await _cerrarBoxSiAbierta(balancesBoxName);
 
-      // Eliminar las boxes del disco
-      if (await Hive.boxExists(movementsBoxName)) {
-        await Hive.deleteBoxFromDisk(movementsBoxName);
-      }
-      if (await Hive.boxExists(balancesBoxName)) {
-        await Hive.deleteBoxFromDisk(balancesBoxName);
-      }
+      // 3. Eliminar los archivos de las cajas del disco
+      await Hive.deleteBoxFromDisk(movementsBoxName);
+      await Hive.deleteBoxFromDisk(balancesBoxName);
 
-      // Eliminar el perfil de la lista y de la caja de perfiles
+      // 4. Eliminar el perfil de la lista en memoria y de la caja de perfiles en disco
       _perfiles.remove(nombrePerfil);
       for (var key in _cajaPerfiles.keys) {
         if (_cajaPerfiles.get(key) == nombrePerfil) {
           await _cajaPerfiles.delete(key);
           break;
         }
+      }
+
+      // 5. Si se eliminó el perfil actual, cambiar al nuevo perfil activo
+      if (seEliminaElPerfilActual) {
+        _perfilActual = proximoPerfilActivo ?? '';
+        await _cajaConfiguracion.put('currentProfile', _perfilActual);
+
+        // Si hay un nuevo perfil, ábrelo. Si no (era el último), las cajas
+        // permanecerán cerradas y el provider en un estado "vacío" seguro.
+        if (proximoPerfilActivo != null) {
+          await _abrirCajasDelPerfil();
+        }
+        // Si proximoPerfilActivo es null, no hacemos nada, la UI se encargará
+        // de pedir un nuevo perfil.
       }
 
       notifyListeners();
