@@ -33,10 +33,22 @@ class _PantallaMovimientosState extends State<PantallaMovimientos> {
 
   @override
   Widget build(BuildContext context) {
+    // Obtenemos el nombre del perfil actual desde el provider.
+    final nombrePerfil = Provider.of<BalanceProvider>(context).perfilActual;
     return Scaffold(
       drawer: const _PerfilesDrawer(),
       appBar: AppBar(
-        title: const Text('Movimientos'),
+        title: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Flexible(
+              child: Text(
+                nombrePerfil.isEmpty ? 'Movimientos' : nombrePerfil,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
         actions: [
           // Botón exportar PDF
           IconButton(

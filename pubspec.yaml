@@ -32,5 +32,12 @@ flutter:
   uses-material-design: true
   assets:
     - assets/icon/icon.png
-    - assets/images/
-    - assets/fonts/
+    - assets/images/drawer_background.jpg
+    - assets/images/frieren 221.jpg
+    - assets/images/frieren.jpg
+    - assets/images/isla.jpg
+    - assets/images/marin 239.jpg
+    - assets/images/mitsuri 34.jpg
+    - assets/images/rezero 178.jpg
+    - assets/fonts/Roboto-Bold.ttf
+    - assets/fonts/Roboto-Regular.ttf

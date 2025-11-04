@@ -173,9 +173,7 @@ class BalanceProvider with ChangeNotifier {
 
       _perfiles = _cajaPerfiles.values.toList();
       if (_perfiles.isEmpty) {
-        // Si no hay perfiles, creamos uno por defecto para evitar errores.
-        await crearPerfil('Principal');
-        _perfilActual = 'Principal';
+        _perfilActual = ''; // No hay perfil, la UI forzará la creación.
       } else {
         _perfilActual = _cajaConfiguracion.get('currentProfile',
             defaultValue: _perfiles.first);
@@ -185,12 +183,15 @@ class BalanceProvider with ChangeNotifier {
       if (_perfiles.isNotEmpty && !_perfiles.contains(_perfilActual)) {
         _perfilActual = _perfiles.first;
       }
-      // Inicializar las cajas antes de abrir el perfil
-      _cajaMovimientos =
-          await Hive.openBox<Movement>('movements_$_perfilActual');
-      _cajaSaldos = await Hive.openBox<double>('balances_$_perfilActual');
 
-      await _cargarDatosIniciales();
+      // Solo abrir cajas si hay un perfil válido
+      if (_perfilActual.isNotEmpty) {
+        _cajaMovimientos =
+            await Hive.openBox<Movement>('movements_$_perfilActual');
+        _cajaSaldos = await Hive.openBox<double>('balances_$_perfilActual');
+        await _cargarDatosIniciales();
+      }
+
       notifyListeners();
     } catch (e) {
       debugPrint('Error en init: $e');
@@ -200,10 +201,14 @@ class BalanceProvider with ChangeNotifier {
 
   Future<void> _abrirCajasDelPerfil() async {
     try {
-      if (_cajaMovimientos.isOpen) {
+      // Comprobamos si la caja está abierta usando Hive.isBoxOpen, que es más seguro
+      // que acceder a la variable de instancia directamente si aún no ha sido inicializada.
+      final movementsBoxName = 'movements_$_perfilActual';
+      if (Hive.isBoxOpen(movementsBoxName)) {
         await _cajaMovimientos.close();
       }
-      if (_cajaSaldos.isOpen) {
+      final balancesBoxName = 'balances_$_perfilActual';
+      if (Hive.isBoxOpen(balancesBoxName)) {
         await _cajaSaldos.close();
       }
 
@@ -227,10 +232,8 @@ class BalanceProvider with ChangeNotifier {
 
   Future<void> _cerrarBoxSiAbierta(String nombreBox) async {
     if (Hive.isBoxOpen(nombreBox)) {
-      final box = Hive.box(nombreBox);
-      if (box.isOpen) {
-        await box.close();
-      }
+      // Obtenemos la instancia de la caja ya abierta y la cerramos.
+      await Hive.box(nombreBox).close();
     }
   }
 
@@ -256,8 +259,18 @@ class BalanceProvider with ChangeNotifier {
     if (nombrePerfil == _perfilActual || !_perfiles.contains(nombrePerfil)) {
       return;
     }
+
+    // 1. Cerrar las cajas del perfil actual (el viejo) antes de cambiar.
+    if (_cajaMovimientos.isOpen) await _cajaMovimientos.close();
+    if (_cajaSaldos.isOpen) await _cajaSaldos.close();
+
+    // 2. Actualizar el nombre del perfil.
     _perfilActual = nombrePerfil;
+
+    // 3. Guardar el nuevo perfil en la configuración.
     await _cajaConfiguracion.put('currentProfile', _perfilActual);
+
+    // 4. Abrir las cajas del nuevo perfil y notificar a la UI.
     await _abrirCajasDelPerfil();
   }
 
@@ -268,9 +281,15 @@ class BalanceProvider with ChangeNotifier {
     }
     await _cajaPerfiles.add(recortado);
     _perfiles.add(recortado);
-    // Siempre cambiamos al perfil recién creado para asegurar que las cajas se abran correctamente.
-    await cambiarPerfil(recortado);
-    notifyListeners();
+
+    // Si es el primer perfil, lo abrimos directamente. Si no, cambiamos a él.
+    if (_perfilActual.isEmpty) {
+      _perfilActual = recortado;
+      await _cajaConfiguracion.put('currentProfile', _perfilActual);
+      await _abrirCajasDelPerfil();
+    } else {
+      await cambiarPerfil(recortado);
+    }
   }
 
   Future<void> editarNombrePerfil(
@@ -359,6 +378,9 @@ class BalanceProvider with ChangeNotifier {
   Future<void> eliminarPerfil(String nombrePerfil) async {
     if (_perfiles.isEmpty || !_perfiles.contains(nombrePerfil)) return;
 
+    final movementsBoxName = 'movements_$nombrePerfil';
+    final balancesBoxName = 'balances_$nombrePerfil';
+
     try {
       // 1. Determinar cuál será el próximo perfil activo
       String? proximoPerfilActivo;
@@ -376,10 +398,15 @@ class BalanceProvider with ChangeNotifier {
 
       // 2. Cerrar las cajas del perfil a eliminar (si están abiertas)
       // Esto es crucial si el perfil a eliminar no es el activo.
-      final movementsBoxName = 'movements_$nombrePerfil';
-      final balancesBoxName = 'balances_$nombrePerfil';
-      await _cerrarBoxSiAbierta(movementsBoxName);
-      await _cerrarBoxSiAbierta(balancesBoxName);
+      if (seEliminaElPerfilActual) {
+        // Si es el perfil actual, cerramos las instancias que el provider ya conoce.
+        if (_cajaMovimientos.isOpen) await _cajaMovimientos.close();
+        if (_cajaSaldos.isOpen) await _cajaSaldos.close();
+      } else {
+        // Si es otro perfil, usamos el método genérico para cerrarlas.
+        await _cerrarBoxSiAbierta(movementsBoxName);
+        await _cerrarBoxSiAbierta(balancesBoxName);
+      }
 
       // 3. Eliminar los archivos de las cajas del disco
       await Hive.deleteBoxFromDisk(movementsBoxName);
@@ -407,8 +434,6 @@ class BalanceProvider with ChangeNotifier {
         // Si proximoPerfilActivo es null, no hacemos nada, la UI se encargará
         // de pedir un nuevo perfil.
       }
-
-      notifyListeners();
     } catch (e) {
       debugPrint('Error al eliminar perfil: $e');
       rethrow;
