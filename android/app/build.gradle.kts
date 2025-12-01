@@ -32,9 +32,10 @@ android {
 
     buildTypes { // Tipos de construcción
         release { // Tipo de construcción de lanzamiento (release)
-            // TODO: Agrega tu propia configuración de firma para la construcción de lanzamiento.
-            // Firmando con las claves de depuración por ahora, para que `flutter run --release` funcione.
-            signingConfig = signingConfigs.getByName("prueba") // Configuración de firma. Nota: "prueba" es un nombre no estándar, generalmente es "debug" o un nombre personalizado para release.
+            // Si no tienes una configuración de firma personalizada llamada "prueba",
+            // usar la configuración `debug` como fallback para evitar fallo en evaluation.
+            // (Para publicar en Play Store debes crear/proporcionar una signingConfig real aquí.)
+            signingConfig = signingConfigs.findByName("prueba") ?: signingConfigs.getByName("debug")
         }
     }
 }

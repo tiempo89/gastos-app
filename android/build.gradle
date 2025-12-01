@@ -5,32 +5,32 @@ allprojects {
     }
 }
 
-val newBuildDir: Directory = rootProject.layout.buildDirectory.dir("../../build").get()
-rootProject.layout.buildDirectory.value(newBuildDir)
+// Move root build directory up two levels so all modules share a single top-level build folder
+// Use the Flutter project root's build directory (one level up from android/)
+def newBuildDir = file('../build')
+rootProject.buildDir = newBuildDir
 
 subprojects {
-    val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
-    project.layout.buildDirectory.value(newSubprojectBuildDir)
+    // Each subproject will place its outputs inside the shared top-level build folder
+    project.buildDir = new File(rootProject.buildDir, project.name)
 }
 
 subprojects {
-    evaluationDependsOn(":app")
+    // Configure android compile options when Android plugins are applied
+    plugins.withId('com.android.application') {
+        android.compileOptions.sourceCompatibility = JavaVersion.VERSION_17
+        android.compileOptions.targetCompatibility = JavaVersion.VERSION_17
+    }
 
-    afterEvaluate { project ->
-        if (project.hasProperty("android")) {
-            project.android {
-                compileOptions {
-                    sourceCompatibility JavaVersion.VERSION_17
-                    targetCompatibility JavaVersion.VERSION_17
-                }
-            }
-        }
+    plugins.withId('com.android.library') {
+        android.compileOptions.sourceCompatibility = JavaVersion.VERSION_17
+        android.compileOptions.targetCompatibility = JavaVersion.VERSION_17
     }
 }
 
 
-tasks.register<Delete>("clean") {
-    delete(rootProject.layout.buildDirectory)
+tasks.register("clean", Delete) {
+    delete rootProject.buildDir
 }
 
 
