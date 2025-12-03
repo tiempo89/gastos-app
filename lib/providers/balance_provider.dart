@@ -66,97 +66,110 @@ class BalanceProvider with ChangeNotifier {
   DateTime? get fechaFin => _fechaFin;
 
   List<Movement> get movimientos {
-    var lista = _cajaMovimientos.values.toList();
+    try {
+      if (!_cajaMovimientos.isOpen) return [];
+      var lista = _cajaMovimientos.values.toList();
 
-    // Aplicar filtro de tipo (efectivo/digital)
-    if (_filtroTipo != FiltroTipo.todos) {
-      lista = lista
-          .where((m) =>
-              _filtroTipo == FiltroTipo.efectivo ? !m.isDigital : m.isDigital)
-          .toList();
-    }
+      // Aplicar filtro de tipo (efectivo/digital)
+      if (_filtroTipo == FiltroTipo.efectivo) {
+        lista = lista.where((m) => !m.isDigital).toList();
+      } else if (_filtroTipo == FiltroTipo.digital) {
+        lista = lista.where((m) => m.isDigital).toList();
+      }
 
-    // Aplicar filtro de operación (ingresos/egresos)
-    if (_filtroOperacion != FiltroOperacion.todos) {
-      lista = lista
-          .where((m) => _filtroOperacion == FiltroOperacion.ingresos
-              ? m.amount > 0
-              : m.amount < 0)
-          .toList();
-    }
+      // Aplicar filtro de operación (ingresos/egresos)
+      if (_filtroOperacion == FiltroOperacion.ingresos) {
+        lista = lista.where((m) => m.amount > 0).toList();
+      } else if (_filtroOperacion == FiltroOperacion.egresos) {
+        lista = lista.where((m) => m.amount < 0).toList();
+      }
 
-    // Aplicar filtro de período
-    final now = DateTime.now();
-    switch (_filtroPeriodo) {
-      case FiltroPeriodo.hoy:
-        lista = lista
-            .where((m) =>
-                m.date.year == now.year &&
-                m.date.month == now.month &&
-                m.date.day == now.day)
-            .toList();
-        break;
-      case FiltroPeriodo.esteMes:
-        lista = lista
-            .where((m) => m.date.year == now.year && m.date.month == now.month)
-            .toList();
-        break;
-      case FiltroPeriodo.esteAnio:
-        lista = lista.where((m) => m.date.year == now.year).toList();
-        break;
-      case FiltroPeriodo.todo:
-        // No aplicar filtro
-        break;
-    }
+      // Aplicar filtro de período
+      final now = DateTime.now();
+      switch (_filtroPeriodo) {
+        case FiltroPeriodo.hoy:
+          lista = lista
+              .where((m) =>
+                  m.date.year == now.year &&
+                  m.date.month == now.month &&
+                  m.date.day == now.day)
+              .toList();
+          break;
+        case FiltroPeriodo.esteMes:
+          lista = lista
+              .where(
+                  (m) => m.date.year == now.year && m.date.month == now.month)
+              .toList();
+          break;
+        case FiltroPeriodo.esteAnio:
+          lista = lista.where((m) => m.date.year == now.year).toList();
+          break;
+        case FiltroPeriodo.todo:
+          // No aplicar filtro
+          break;
+      }
 
-    // Aplicar filtro de fecha personalizado si está configurado
-    if (_fechaInicio != null) {
-      lista = lista.where((m) => m.date.isAfter(_fechaInicio!)).toList();
-    }
-    if (_fechaFin != null) {
-      // Hacemos el filtro inclusivo para el día final.
-      // Se considera hasta el final del día de _fechaFin.
-      final fechaFinInclusiva = _fechaFin!.add(const Duration(days: 1));
-      lista = lista.where((m) => m.date.isBefore(fechaFinInclusiva)).toList();
-    }
+      // Aplicar filtro de fecha personalizado si está configurado
+      if (_fechaInicio != null) {
+        lista = lista.where((m) => m.date.isAfter(_fechaInicio!)).toList();
+      }
+      if (_fechaFin != null) {
+        // Hacemos el filtro inclusivo para el día final.
+        // Se considera hasta el final del día de _fechaFin.
+        final fechaFinInclusiva = _fechaFin!.add(const Duration(days: 1));
+        lista = lista.where((m) => m.date.isBefore(fechaFinInclusiva)).toList();
+      }
 
-    // Aplicar ordenamiento
-    switch (_ordenamiento) {
-      case Ordenamiento.fechaDescendente:
-        lista.sort((a, b) => b.date.compareTo(a.date));
-        break;
-      case Ordenamiento.fechaAscendente:
-        lista.sort((a, b) => a.date.compareTo(b.date));
-        break;
-      case Ordenamiento.alfabeticoAscendente:
-        lista.sort((a, b) => a.concept.compareTo(b.concept));
-        break;
-      case Ordenamiento.alfabeticoDescendente:
-        lista.sort((a, b) => b.concept.compareTo(a.concept));
-        break;
-      case Ordenamiento.montoAscendente:
-        lista.sort((a, b) => a.amount.compareTo(b.amount));
-        break;
-      case Ordenamiento.montoDescendente:
-        lista.sort((a, b) => b.amount.compareTo(a.amount));
-        break;
-    }
+      // Aplicar ordenamiento
+      switch (_ordenamiento) {
+        case Ordenamiento.fechaDescendente:
+          lista.sort((a, b) => b.date.compareTo(a.date));
+          break;
+        case Ordenamiento.fechaAscendente:
+          lista.sort((a, b) => a.date.compareTo(b.date));
+          break;
+        case Ordenamiento.alfabeticoAscendente:
+          lista.sort((a, b) => a.concept.compareTo(b.concept));
+          break;
+        case Ordenamiento.alfabeticoDescendente:
+          lista.sort((a, b) => b.concept.compareTo(a.concept));
+          break;
+        case Ordenamiento.montoAscendente:
+          lista.sort((a, b) => a.amount.compareTo(b.amount));
+          break;
+        case Ordenamiento.montoDescendente:
+          lista.sort((a, b) => b.amount.compareTo(a.amount));
+          break;
+      }
 
-    return lista;
+      return lista;
+    } catch (e) {
+      return [];
+    }
   }
 
   double get saldoActualEfectivo {
-    return _saldoInicialEfectivo +
-        _cajaMovimientos.values
-            .where((m) => !m.isDigital)
-            .fold(0.0, (sum, m) => sum + m.amount);
+    try {
+      if (!_cajaSaldos.isOpen || !_cajaMovimientos.isOpen) return 0.0;
+      return _saldoInicialEfectivo +
+          _cajaMovimientos.values
+              .where((m) => !m.isDigital)
+              .fold(0.0, (sum, m) => sum + m.amount);
+    } catch (e) {
+      return 0.0;
+    }
   }
 
   double get saldoActualDigital {
-    return _saldoInicialDigital +
-        _cajaMovimientos.values
-            .where((m) => m.isDigital)
-            .fold(0.0, (sum, m) => sum + m.amount);
+    try {
+      if (!_cajaSaldos.isOpen || !_cajaMovimientos.isOpen) return 0.0;
+      return _saldoInicialDigital +
+          _cajaMovimientos.values
+              .where((m) => m.isDigital)
+              .fold(0.0, (sum, m) => sum + m.amount);
+    } catch (e) {
+      return 0.0;
+    }
   }
 
   double get saldoActual => saldoActualEfectivo + saldoActualDigital;
@@ -317,12 +330,6 @@ class BalanceProvider with ChangeNotifier {
         }
       }
 
-      // Si es el perfil actual, actualizar el nombre y la configuración
-      if (_perfilActual == nombreViejo) {
-        _perfilActual = recortado;
-        await _cajaConfiguracion.put('currentProfile', recortado);
-      }
-
       // --- Lógica de renombrado de archivos de Hive ---
 
       // 1. Definir nombres y rutas de las cajas
@@ -335,7 +342,7 @@ class BalanceProvider with ChangeNotifier {
 
       // 2. Cerrar las cajas si están abiertas para liberar los archivos
       // Si estamos renombrando el perfil actual, cerramos las cajas que el provider tiene abiertas.
-      if (_perfilActual == recortado) {
+      if (_perfilActual == nombreViejo) {
         if (_cajaMovimientos.isOpen) await _cajaMovimientos.close();
         if (_cajaSaldos.isOpen) await _cajaSaldos.close();
       } else {
@@ -345,32 +352,91 @@ class BalanceProvider with ChangeNotifier {
       }
 
       // 3. Renombrar los archivos .hive y .lock directamente
-      final oldMovementsFile = File('$path/$oldMovementsBoxName.hive');
-      if (await oldMovementsFile.exists()) {
-        await oldMovementsFile.rename('$path/$newMovementsBoxName.hive');
-      }
-      final oldMovementsLockFile = File('$path/$oldMovementsBoxName.lock');
-      if (await oldMovementsLockFile.exists()) {
-        await oldMovementsLockFile.rename('$path/$newMovementsBoxName.lock');
+      String? oldMovementsPath;
+      String? oldBalancesPath;
+
+      if (_perfilActual == nombreViejo && _cajaMovimientos.isOpen) {
+        oldMovementsPath = _cajaMovimientos.path;
+      } else {
+        final exactFile = File('$path/$oldMovementsBoxName.hive');
+        final lowerFile =
+            File('$path/${oldMovementsBoxName.toLowerCase()}.hive');
+        if (await exactFile.exists()) {
+          oldMovementsPath = exactFile.path;
+        } else if (await lowerFile.exists()) {
+          oldMovementsPath = lowerFile.path;
+        }
       }
 
-      final oldBalancesFile = File('$path/$oldBalancesBoxName.hive');
-      if (await oldBalancesFile.exists()) {
-        await oldBalancesFile.rename('$path/$newBalancesBoxName.hive');
-      }
-      final oldBalancesLockFile = File('$path/$oldBalancesBoxName.lock');
-      if (await oldBalancesLockFile.exists()) {
-        await oldBalancesLockFile.rename('$path/$newBalancesBoxName.lock');
+      if (_perfilActual == nombreViejo && _cajaSaldos.isOpen) {
+        oldBalancesPath = _cajaSaldos.path;
+      } else {
+        final exactFile = File('$path/$oldBalancesBoxName.hive');
+        final lowerFile =
+            File('$path/${oldBalancesBoxName.toLowerCase()}.hive');
+        if (await exactFile.exists()) {
+          oldBalancesPath = exactFile.path;
+        } else if (await lowerFile.exists()) {
+          oldBalancesPath = lowerFile.path;
+        }
       }
 
-      // 4. Si el perfil renombrado es el que estaba activo, lo reabrimos con su nuevo nombre.
-      if (_perfilActual == recortado) {
+      if (oldMovementsPath != null) {
+        final oldFile = File(oldMovementsPath);
+        String newFilename;
+
+        // Determinar convención de nombres basada en el archivo viejo
+        if (oldMovementsPath
+            .endsWith('${oldMovementsBoxName.toLowerCase()}.hive')) {
+          newFilename = '${newMovementsBoxName.toLowerCase()}.hive';
+        } else {
+          newFilename = '$newMovementsBoxName.hive';
+        }
+
+        final newPath = '$path/$newFilename';
+        await oldFile.rename(newPath);
+
+        final oldLockPath = oldMovementsPath.replaceAll('.hive', '.lock');
+        final oldLockFile = File(oldLockPath);
+        if (await oldLockFile.exists()) {
+          final newLockFilename = newFilename.replaceAll('.hive', '.lock');
+          await oldLockFile.rename('$path/$newLockFilename');
+        }
+      }
+
+      if (oldBalancesPath != null) {
+        final oldFile = File(oldBalancesPath);
+        String newFilename;
+
+        if (oldBalancesPath
+            .endsWith('${oldBalancesBoxName.toLowerCase()}.hive')) {
+          newFilename = '${newBalancesBoxName.toLowerCase()}.hive';
+        } else {
+          newFilename = '$newBalancesBoxName.hive';
+        }
+
+        final newPath = '$path/$newFilename';
+        await oldFile.rename(newPath);
+
+        final oldLockPath = oldBalancesPath.replaceAll('.hive', '.lock');
+        final oldLockFile = File(oldLockPath);
+        if (await oldLockFile.exists()) {
+          final newLockFilename = newFilename.replaceAll('.hive', '.lock');
+          await oldLockFile.rename('$path/$newLockFilename');
+        }
+      }
+
+      // 4. Si el perfil renombrado es el que estaba activo, actualizamos el nombre y la configuración.
+      // IMPORTANTE: Hacemos esto DESPUÉS de renombrar los archivos exitosamente.
+      if (_perfilActual == nombreViejo) {
+        _perfilActual = recortado;
+        await _cajaConfiguracion.put('currentProfile', recortado);
+        // Reabrimos las cajas con el nuevo nombre
         await _abrirCajasDelPerfil();
       }
 
       notifyListeners();
     } catch (e) {
-      debugPrint('Error al editar nombre de perfil: $e');
       rethrow;
     }
   }

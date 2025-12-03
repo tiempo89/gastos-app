@@ -103,13 +103,28 @@ class _PantallaMovimientosState extends State<PantallaMovimientos> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          const _SaldosCard(),
-          const _FormularioAgregarMovimiento(),
-          const _ListaMovimientos(),
-          const _TotalBalanceBar(),
-        ],
+      body: SafeArea(
+        child: Column(
+          children: [
+            const _SaldosCard(),
+
+            // Hacemos que el formulario sea scrollable y flexible para evitar
+            // que la aparición del teclado (o pantallas pequeñas) provoquen
+            // un overflow del Column (RenderFlex overflow).
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(vertical: 8.0),
+                child: Column(children: const [
+                  _FormularioAgregarMovimiento(),
+                ]),
+              ),
+            ),
+
+            // Lista toma el espacio restante (ya que devuelve Expanded)
+            const _ListaMovimientos(),
+            const _TotalBalanceBar(),
+          ],
+        ),
       ),
     );
   }
@@ -578,108 +593,117 @@ class _ListaMovimientos extends StatelessWidget {
           ),
           // Lista de movimientos encima
           Positioned.fill(
-            child: ListView.builder(
-              padding: const EdgeInsets.only(top: 8),
-              itemCount: balanceProvider.movimientos.length,
-              itemBuilder: (context, index) {
-                final movement = balanceProvider.movimientos[index];
-                return Card(
-                  margin:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                  // Hacemos la tarjeta semi-transparente para que se vea
-                  // la imagen de fondo de la lista.
-                  color: Theme.of(context).brightness == Brightness.dark
-                      ? const Color.fromRGBO(0, 0, 0, 0.25)
-                      : const Color.fromRGBO(255, 255, 255, 0.55),
-                  elevation: 1,
-                  child: InkWell(
-                    onLongPress: () =>
-                        _mostrarDialogoEditarMovimiento(context, movement),
-                    child: Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: Row(
-                        children: [
-                          // Fecha y tipo de movimiento
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: (movement.isDigital
-                                      ? Colors.blue
-                                      : Colors.green)
-                                  .withAlpha(
-                                      balanceProvider.esModoOscuro ? 51 : 26),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  "${movement.date.day}/${movement.date.month}",
-                                  style: const TextStyle(fontSize: 14),
+            child: Builder(
+              builder: (context) {
+                final movimientosList = balanceProvider.movimientos;
+                return ListView.builder(
+                  padding: const EdgeInsets.only(top: 8),
+                  itemCount: movimientosList.length,
+                  itemBuilder: (context, index) {
+                    final movement = movimientosList[index];
+                    return Card(
+                      margin: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 4),
+                      // Hacemos la tarjeta semi-transparente para que se vea
+                      // la imagen de fondo de la lista.
+                      color: Theme.of(context).brightness == Brightness.dark
+                          ? const Color.fromRGBO(0, 0, 0, 0.25)
+                          : const Color.fromRGBO(255, 255, 255, 0.55),
+                      elevation: 1,
+                      child: InkWell(
+                        onLongPress: () =>
+                            _mostrarDialogoEditarMovimiento(context, movement),
+                        child: Padding(
+                          padding: const EdgeInsets.all(8.0),
+                          child: Row(
+                            children: [
+                              // Fecha y tipo de movimiento
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: (movement.isDigital
+                                          ? Colors.blue
+                                          : Colors.green)
+                                      .withAlpha(balanceProvider.esModoOscuro
+                                          ? 51
+                                          : 26),
+                                  borderRadius: BorderRadius.circular(8),
                                 ),
-                                Icon(
-                                  movement.isDigital
-                                      ? Icons.account_balance_wallet
-                                      : Icons.money,
-                                  color: movement.isDigital
-                                      ? Colors.blue
-                                      : Colors.green,
-                                  size: 16,
-                                ),
-                                Text(
-                                  movement.isDigital ? 'Digital' : 'Efectivo',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: movement.isDigital
-                                        ? Colors.blue
-                                        : Colors.green,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          // Concepto y monto
-                          Expanded(
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        movement.concept,
-                                        style: const TextStyle(
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w500),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      "${movement.date.day}/${movement.date.month}",
+                                      style: const TextStyle(fontSize: 14),
+                                    ),
+                                    Icon(
+                                      movement.isDigital
+                                          ? Icons.account_balance_wallet
+                                          : Icons.money,
+                                      color: movement.isDigital
+                                          ? Colors.blue
+                                          : Colors.green,
+                                      size: 16,
+                                    ),
+                                    Text(
+                                      movement.isDigital
+                                          ? 'Digital'
+                                          : 'Efectivo',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: movement.isDigital
+                                            ? Colors.blue
+                                            : Colors.green,
                                       ),
-                                      Text(
-                                        'Mantén presionado para editar',
-                                        style: TextStyle(
-                                            fontSize: 12,
-                                            color: Colors.grey[600]),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              // Concepto y monto
+                              Expanded(
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            movement.concept,
+                                            style: const TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.w500),
+                                          ),
+                                          Text(
+                                            'Mantén presionado para editar',
+                                            style: TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.grey[600]),
+                                          ),
+                                        ],
                                       ),
-                                    ],
-                                  ),
+                                    ),
+                                    Text(
+                                      "\$${_formatoNumero.format(movement.amount)}",
+                                      style: TextStyle(
+                                          fontSize: 16,
+                                          color: movement.amount >= 0
+                                              ? Colors.green
+                                              : Colors.red,
+                                          fontWeight: FontWeight.bold),
+                                    ),
+                                  ],
                                 ),
-                                Text(
-                                  "\$${_formatoNumero.format(movement.amount)}",
-                                  style: TextStyle(
-                                      fontSize: 16,
-                                      color: movement.amount >= 0
-                                          ? Colors.green
-                                          : Colors.red,
-                                      fontWeight: FontWeight.bold),
-                                ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
-                    ),
-                  ),
+                    );
+                  },
                 );
               },
             ),

@@ -5,6 +5,15 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin") // ID del complemento de Gradle de Flutter
 }
 
+import java.util.Properties
+
+// Cargamos propiedades del keystore si están disponibles en android/keystore.properties
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties()
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
+}
+
 android {
     namespace = "com.example.gastos" // Espacio de nombres del paquete
     compileSdk = flutter.compileSdkVersion // Versión del SDK con la que compilar (tomada de la configuración de Flutter)
@@ -31,11 +40,23 @@ android {
     }
 
     buildTypes { // Tipos de construcción
-        release { // Tipo de construcción de lanzamiento (release)
-            // Si no tienes una configuración de firma personalizada llamada "prueba",
-            // usar la configuración `debug` como fallback para evitar fallo en evaluation.
-            // (Para publicar en Play Store debes crear/proporcionar una signingConfig real aquí.)
-            signingConfig = signingConfigs.findByName("prueba") ?: signingConfigs.getByName("debug")
+        // Si el archivo keystore.properties existe, registramos una signingConfig 'release'
+        // usando sus valores. Si no existe, usamos debug como fallback para seguir
+        // permitiendo builds locales.
+        release {
+            if (keystorePropertiesFile.exists()) {
+                signingConfigs.create("release") {
+                    keyAlias = keystoreProperties.getProperty("keyAlias")
+                    keyPassword = keystoreProperties.getProperty("keyPassword")
+                    // Resolve file path relative to the Android project root (android/)
+                    storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
+                    storePassword = keystoreProperties.getProperty("storePassword")
+                }
+                signingConfig = signingConfigs.getByName("release")
+            } else {
+                // Fallback temporal a `debug` para evitar errores durante la evaluación
+                signingConfig = signingConfigs.getByName("debug")
+            }
         }
     }
 }
