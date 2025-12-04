@@ -6,15 +6,7 @@ import 'dart:io'; // Importar la librería dart:io para la clase File
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../providers/balance_provider.dart';
-import 'package:open_file/open_file.dart';
 import 'filter_screen.dart';
-
-// Enums para las opciones del PDF
-enum OrdenFecha { ascendente, descendente }
-
-enum TipoMovimiento { todos, efectivo, digital }
-
-enum TipoTransaccion { todos, ingresos, egresos }
 
 final _formatoNumero = NumberFormat.decimalPattern('es_ES');
 
@@ -59,12 +51,6 @@ class _PantallaMovimientosState extends State<PantallaMovimientos> {
           ],
         ),
         actions: [
-          // Botón exportar PDF
-          IconButton(
-            icon: const Icon(Icons.picture_as_pdf),
-            onPressed: () => _mostrarDialogoOpcionesPdf(this.context),
-            tooltip: 'Exportar PDF',
-          ),
           IconButton(
             icon: const Icon(Icons.filter_list),
             onPressed: () {
@@ -728,8 +714,6 @@ class _ListaMovimientos extends StatelessWidget {
   }
 }
 
-// --- FUNCIONES DE DIÁLOGO Y LÓGICA DE BOTONES (fuera de las clases de widget) ---
-
 void _showLoadingDialog(BuildContext context, String message) {
   showDialog(
     context: context,
@@ -746,193 +730,6 @@ void _showLoadingDialog(BuildContext context, String message) {
         ),
       );
     },
-  );
-}
-
-void _mostrarDialogoOpcionesPdf(BuildContext context) {
-  // Estado inicial de las opciones
-  OrdenFecha orden = OrdenFecha.descendente;
-  TipoMovimiento tipoMovimiento = TipoMovimiento.todos;
-  TipoTransaccion tipoTransaccion = TipoTransaccion.todos;
-
-  showDialog(
-    context: context,
-    builder: (context) {
-      return StatefulBuilder(
-        builder: (context, setState) {
-          return AlertDialog(
-            title: const Text('Opciones de Exportación PDF'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 1. Orden por fecha
-                  const Text('Ordenar por fecha:',
-                      style: TextStyle(fontWeight: FontWeight.bold)),
-                  SegmentedButton<OrdenFecha>(
-                    segments: const [
-                      ButtonSegment(
-                          value: OrdenFecha.descendente,
-                          label: Text('Recientes')),
-                      ButtonSegment(
-                          value: OrdenFecha.ascendente,
-                          label: Text('Antiguos')),
-                    ],
-                    selected: {orden},
-                    onSelectionChanged: (newSelection) =>
-                        setState(() => orden = newSelection.first),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // 2. Filtrar por tipo de movimiento
-                  const Text('Tipo de movimiento:',
-                      style: TextStyle(fontWeight: FontWeight.bold)),
-                  SegmentedButton<TipoMovimiento>(
-                    segments: const [
-                      ButtonSegment(
-                          value: TipoMovimiento.todos, label: Text('Todos')),
-                      ButtonSegment(
-                          value: TipoMovimiento.efectivo,
-                          label: Text('Efectivo')),
-                      ButtonSegment(
-                          value: TipoMovimiento.digital,
-                          label: Text('Digital')),
-                    ],
-                    selected: {tipoMovimiento},
-                    onSelectionChanged: (newSelection) =>
-                        setState(() => tipoMovimiento = newSelection.first),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // 3. Filtrar por ingreso/egreso
-                  const Text('Tipo de transacción:',
-                      style: TextStyle(fontWeight: FontWeight.bold)),
-                  SegmentedButton<TipoTransaccion>(
-                    segments: const [
-                      ButtonSegment(
-                          value: TipoTransaccion.todos, label: Text('Todos')),
-                      ButtonSegment(
-                          value: TipoTransaccion.ingresos,
-                          label: Text('Ingresos')),
-                      ButtonSegment(
-                          value: TipoTransaccion.egresos,
-                          label: Text('Egresos')),
-                    ],
-                    selected: {tipoTransaccion},
-                    onSelectionChanged: (newSelection) =>
-                        setState(() => tipoTransaccion = newSelection.first),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancelar'),
-              ),
-              FilledButton(
-                onPressed: () async {
-                  // Guardamos las referencias que necesitamos del context ANTES del async gap.
-                  final navigator = Navigator.of(context);
-                  final messenger = ScaffoldMessenger.of(context);
-                  final provider =
-                      Provider.of<BalanceProvider>(context, listen: false);
-
-                  // Cerramos el diálogo de opciones primero
-                  navigator.pop();
-
-                  // Usamos un Future.delayed para asegurar que la UI se actualice
-                  // antes de empezar la tarea pesada.
-                  Future.delayed(const Duration(milliseconds: 100), () async {
-                    if (!context.mounted) return;
-                    // Usamos el 'context' principal, no el del navegador que ya se cerró.
-                    _showLoadingDialog(context, "Generando PDF...");
-
-                    String? tempPath;
-                    try {
-                      // 1. Generar el PDF en una ubicación temporal
-                      tempPath = await provider.exportarAPdf(
-                        orden: orden,
-                        tipoMovimiento: tipoMovimiento,
-                        tipoTransaccion: tipoTransaccion,
-                        esTemporal: true, // Nuevo parámetro
-                      );
-
-                      if (!context.mounted) return;
-                      navigator.pop(); // Cierra diálogo de carga
-
-                      // 2. Abrir el PDF para previsualizar
-                      final result = await OpenFile.open(tempPath);
-                      if (result.type != ResultType.done) {
-                        throw Exception(
-                            'No se pudo abrir el archivo: ${result.message}');
-                      }
-
-                      // 3. Mostrar diálogo de confirmación para guardar o descartar
-                      if (!context.mounted) return;
-                      final bool guardar =
-                          await _mostrarDialogoConfirmarGuardado(context) ??
-                              false;
-
-                      if (guardar) {
-                        final finalPath =
-                            await provider.guardarPdfPermanente(tempPath);
-                        messenger.showSnackBar(SnackBar(
-                          content: Text('PDF guardado en: $finalPath'),
-                          duration: const Duration(seconds: 5),
-                        ));
-                      } else {
-                        await provider.descartarPdfTemporal(tempPath);
-                        messenger.showSnackBar(const SnackBar(
-                          content: Text('PDF descartado.'),
-                        ));
-                      }
-                    } catch (e) {
-                      // Limpieza en caso de error
-                      if (tempPath != null) {
-                        await provider.descartarPdfTemporal(tempPath);
-                      }
-                      if (!context.mounted) return;
-                      navigator.pop(); // Cierra diálogo de carga
-                      messenger.showSnackBar(SnackBar(
-                        content: Text('Error al generar PDF: ${e.toString()}'),
-                        backgroundColor: Colors.red,
-                      ));
-                    }
-                  });
-                },
-                child: const Text('Generar PDF'),
-              ),
-            ],
-          );
-        },
-      );
-    },
-  );
-}
-
-Future<bool?> _mostrarDialogoConfirmarGuardado(BuildContext context) {
-  return showDialog<bool>(
-    context: context,
-    barrierDismissible: false,
-    builder: (context) => AlertDialog(
-      title: const Text('¿Guardar el PDF?'),
-      content: const Text(
-          'Has previsualizado el reporte. ¿Quieres guardarlo permanentemente en tu carpeta de Documentos?'),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(false),
-          style: TextButton.styleFrom(
-              foregroundColor: Theme.of(context).colorScheme.error),
-          child: const Text('Descartar'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop(true),
-          child: const Text('Guardar'),
-        ),
-      ],
-    ),
   );
 }
 
