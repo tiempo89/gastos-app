@@ -23,6 +23,18 @@ class Movement extends HiveObject {
     required this.isDigital,
   });
 
+  // Constructor para crear una nueva instancia con los mismos datos,
+  // útil para la edición.
+  factory Movement.withKey({
+    required DateTime date,
+    required String concept,
+    required double amount,
+    required bool isDigital,
+  }) {
+    return Movement(
+        date: date, concept: concept, amount: amount, isDigital: isDigital);
+  }
+
   @override
   String toString() {
     return 'Movement(date: $date, concept: $concept, amount: $amount, isDigital: $isDigital)';

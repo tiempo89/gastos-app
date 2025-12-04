@@ -3,11 +3,11 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:open_file/open_file.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import '../models/movement.dart';
+import '../screens/movements_screen.dart';
 
 enum Ordenamiento {
   fechaDescendente,
@@ -721,14 +721,45 @@ class BalanceProvider with ChangeNotifier {
     }
   }
 
-  Future<String> exportarAPdf() async => exportToPdf();
-
-  Future<String> exportToPdf() async {
+  Future<String> exportarAPdf({
+    OrdenFecha orden = OrdenFecha.descendente,
+    TipoMovimiento tipoMovimiento = TipoMovimiento.todos,
+    TipoTransaccion tipoTransaccion = TipoTransaccion.todos,
+    bool esTemporal = false,
+  }) async {
     // Cargar las fuentes TTF desde los assets
     final fontData = await rootBundle.load("assets/fonts/Roboto-Regular.ttf");
     final boldFontData = await rootBundle.load("assets/fonts/Roboto-Bold.ttf");
     final ttf = pw.Font.ttf(fontData.buffer.asByteData());
     final boldTtf = pw.Font.ttf(boldFontData.buffer.asByteData());
+
+    // 1. Obtener y filtrar la lista de movimientos según las opciones
+    List<Movement> movimientosParaPdf = _cajaMovimientos.values.toList();
+
+    // Filtrar por tipo de movimiento
+    if (tipoMovimiento == TipoMovimiento.efectivo) {
+      movimientosParaPdf =
+          movimientosParaPdf.where((m) => !m.isDigital).toList();
+    } else if (tipoMovimiento == TipoMovimiento.digital) {
+      movimientosParaPdf =
+          movimientosParaPdf.where((m) => m.isDigital).toList();
+    }
+
+    // Filtrar por tipo de transacción
+    if (tipoTransaccion == TipoTransaccion.ingresos) {
+      movimientosParaPdf =
+          movimientosParaPdf.where((m) => m.amount >= 0).toList();
+    } else if (tipoTransaccion == TipoTransaccion.egresos) {
+      movimientosParaPdf =
+          movimientosParaPdf.where((m) => m.amount < 0).toList();
+    }
+
+    // Ordenar por fecha
+    if (orden == OrdenFecha.descendente) {
+      movimientosParaPdf.sort((a, b) => b.date.compareTo(a.date));
+    } else {
+      movimientosParaPdf.sort((a, b) => a.date.compareTo(b.date));
+    }
 
     final pdf = pw.Document(
       theme: pw.ThemeData.withFont(
@@ -737,10 +768,6 @@ class BalanceProvider with ChangeNotifier {
       ),
     );
     final generationDate = DateTime.now();
-    // Usamos la lista completa de movimientos, ignorando los filtros de la UI.
-    final todosLosMovimientos = _cajaMovimientos.values.toList();
-    // Opcional: Ordenar la lista para el reporte, por ejemplo, por fecha descendente.
-    todosLosMovimientos.sort((a, b) => b.date.compareTo(a.date));
 
     pdf.addPage(
       pw.MultiPage(
@@ -836,7 +863,7 @@ class BalanceProvider with ChangeNotifier {
 
                 // 3.2 Filas de datos
                 // Usamos un bucle 'for' dentro de la lista para generar cada fila.
-                for (final entry in todosLosMovimientos.asMap().entries)
+                for (final entry in movimientosParaPdf.asMap().entries)
                   pw.TableRow(
                     decoration: pw.BoxDecoration(
                       // Alternamos el color de la fila usando el índice (entry.key)
@@ -877,9 +904,27 @@ class BalanceProvider with ChangeNotifier {
 
     final formattedDateTime =
         "${generationDate.year}${generationDate.month.toString().padLeft(2, '0')}${generationDate.day.toString().padLeft(2, '0')}_${generationDate.hour.toString().padLeft(2, '0')}${generationDate.minute.toString().padLeft(2, '0')}${generationDate.second.toString().padLeft(2, '0')}";
-    final output = await getApplicationDocumentsDirectory();
-    final file = File(
-        '${output.path}/movimientos_${_perfilActual}_$formattedDateTime.pdf');
+
+    final filename = 'movimientos_${_perfilActual}_$formattedDateTime.pdf';
+
+    Directory outputDir;
+    if (esTemporal) {
+      outputDir = await getTemporaryDirectory();
+    } else {
+      // En Android, intentamos obtener la carpeta pública de Documentos.
+      if (Platform.isAndroid) {
+        final directories = await getExternalStorageDirectories(
+            type: StorageDirectory.documents);
+        outputDir = (directories != null && directories.isNotEmpty)
+            ? directories.first
+            : await getApplicationDocumentsDirectory();
+      } else {
+        // Si no estamos en Android o no se encontró la carpeta, usamos la de la app.
+        outputDir = await getApplicationDocumentsDirectory();
+      }
+    }
+
+    final file = File('${outputDir.path}/$filename');
     await file.writeAsBytes(await pdf.save());
 
     // Añadimos una pequeña demora para asegurar que el sistema de archivos
@@ -887,17 +932,37 @@ class BalanceProvider with ChangeNotifier {
     // condiciones de carrera, especialmente con archivos grandes.
     await Future.delayed(const Duration(milliseconds: 200));
 
-    final result = await OpenFile.open(file.path);
+    return file.path;
+  }
 
-    // Opcional: Manejar el caso en que el archivo no se pueda abrir.
-    if (result.type != ResultType.done) {
-      // Si no se pudo abrir (ej. no hay visor de PDF), lanzamos una excepción
-      // para que la UI pueda informar al usuario.
-      throw Exception(
-          'No se pudo abrir el archivo PDF automáticamente: ${result.message}');
+  Future<String> guardarPdfPermanente(String tempPath) async {
+    final tempFile = File(tempPath);
+    if (!await tempFile.exists()) {
+      throw Exception('El archivo temporal no existe.');
     }
 
-    return file.path;
+    Directory? outputDir;
+    if (Platform.isAndroid) {
+      final directories =
+          await getExternalStorageDirectories(type: StorageDirectory.documents);
+      outputDir = (directories != null && directories.isNotEmpty)
+          ? directories.first
+          : await getApplicationDocumentsDirectory();
+    } else {
+      outputDir = await getApplicationDocumentsDirectory();
+    }
+
+    final newPath = '${outputDir.path}/${tempPath.split('/').last}';
+    await tempFile.copy(newPath);
+    await tempFile.delete(); // Limpiamos el archivo temporal
+    return newPath;
+  }
+
+  Future<void> descartarPdfTemporal(String tempPath) async {
+    final tempFile = File(tempPath);
+    if (await tempFile.exists()) {
+      await tempFile.delete();
+    }
   }
 
   // --- Funciones de ayuda para construir celdas de la tabla PDF ---

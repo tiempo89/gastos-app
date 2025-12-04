@@ -9,6 +9,13 @@ import '../providers/balance_provider.dart';
 import 'package:open_file/open_file.dart';
 import 'filter_screen.dart';
 
+// Enums para las opciones del PDF
+enum OrdenFecha { ascendente, descendente }
+
+enum TipoMovimiento { todos, efectivo, digital }
+
+enum TipoTransaccion { todos, ingresos, egresos }
+
 final _formatoNumero = NumberFormat.decimalPattern('es_ES');
 
 class PantallaMovimientos extends StatefulWidget {
@@ -36,6 +43,8 @@ class _PantallaMovimientosState extends State<PantallaMovimientos> {
     // Obtenemos el nombre del perfil actual desde el provider.
     final nombrePerfil = Provider.of<BalanceProvider>(context).perfilActual;
     return Scaffold(
+      resizeToAvoidBottomInset:
+          false, // El teclado se sobrepone en lugar de desplazar
       drawer: const _PerfilesDrawer(),
       appBar: AppBar(
         title: Row(
@@ -53,33 +62,7 @@ class _PantallaMovimientosState extends State<PantallaMovimientos> {
           // Botón exportar PDF
           IconButton(
             icon: const Icon(Icons.picture_as_pdf),
-            onPressed: () async {
-              _showLoadingDialog(context, "Generando PDF...");
-              final messenger = ScaffoldMessenger.of(context);
-              final provider =
-                  Provider.of<BalanceProvider>(context, listen: false);
-
-              try {
-                final path = await provider.exportarAPdf();
-                if (!context.mounted) return;
-                Navigator.pop(context); // Cierra diálogo de carga
-
-                messenger.showSnackBar(SnackBar(
-                  content: Text('PDF generado: $path'),
-                  action: SnackBarAction(
-                    label: 'Abrir',
-                    onPressed: () => OpenFile.open(path),
-                  ),
-                ));
-              } catch (e) {
-                if (!context.mounted) return;
-                Navigator.pop(context); // Cierra diálogo de carga
-                messenger.showSnackBar(SnackBar(
-                  content: Text('Error al generar PDF: ${e.toString()}'),
-                  backgroundColor: Colors.red,
-                ));
-              }
-            },
+            onPressed: () => _mostrarDialogoOpcionesPdf(this.context),
             tooltip: 'Exportar PDF',
           ),
           IconButton(
@@ -93,39 +76,164 @@ class _PantallaMovimientosState extends State<PantallaMovimientos> {
             },
             tooltip: 'Filtrar movimientos',
           ),
-          IconButton(
-            icon: const Icon(Icons.brightness_6),
-            onPressed: () {
-              Provider.of<BalanceProvider>(context, listen: false)
-                  .alternarTema();
-            },
-            tooltip: 'Cambiar tema',
-          ),
         ],
       ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            const _SaldosCard(),
+      body: Column(
+        children: [
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.max,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Aplicamos SafeArea solo a la tarjeta de saldos
+                SafeArea(
+                  bottom: false,
+                  child: const _SaldosCard(),
+                ),
+                // El formulario ahora tiene un tamaño fijo y no es flexible.
+                // El SingleChildScrollView previene overflow si aparece el teclado.
+                SingleChildScrollView(
+                  padding: const EdgeInsets.only(top: 8.0),
+                  child: Column(children: const [
+                    _FormularioAgregarMovimiento(),
+                  ]),
+                ),
+                // Lista toma el espacio restante (ya que devuelve Expanded)
+                const Expanded(
+                  // flex ya no es necesario, Expanded tomará todo el espacio sobrante.
+                  child: _ListaMovimientos(),
+                ),
+              ],
+            ),
+          ),
+          const _TotalBalanceBar(),
+        ],
+      ),
+    );
+  }
+}
 
-            // Hacemos que el formulario sea scrollable y flexible para evitar
-            // que la aparición del teclado (o pantallas pequeñas) provoquen
-            // un overflow del Column (RenderFlex overflow).
-            Flexible(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(vertical: 8.0),
-                child: Column(children: const [
-                  _FormularioAgregarMovimiento(),
-                ]),
+class _MovementsContent extends StatelessWidget {
+  const _MovementsContent();
+
+  @override
+  Widget build(BuildContext context) {
+    final balanceProvider = Provider.of<BalanceProvider>(context);
+    final movimientosList = balanceProvider.movimientos;
+
+    if (movimientosList.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.receipt_long_outlined,
+              size: 48,
+              color: Theme.of(context).disabledColor,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "No hay movimientos aún",
+              style: TextStyle(
+                fontSize: 15,
+                color: Theme.of(context).disabledColor,
               ),
             ),
-
-            // Lista toma el espacio restante (ya que devuelve Expanded)
-            const _ListaMovimientos(),
-            const _TotalBalanceBar(),
           ],
         ),
-      ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      itemCount: movimientosList.length,
+      itemBuilder: (context, index) {
+        final movement = movimientosList[index];
+        final isLast = index == movimientosList.length - 1;
+
+        return Card(
+          margin: EdgeInsets.only(
+            top: 6,
+            bottom: isLast ? 0 : 6,
+          ),
+          elevation: 2,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          color: Theme.of(context).cardColor.withAlpha(150),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onLongPress: () =>
+                _mostrarDialogoEditarMovimiento(context, movement),
+            child: Padding(
+              padding: const EdgeInsets.all(12.0),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: (movement.isDigital ? Colors.blue : Colors.green)
+                          .withAlpha(25),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      movement.isDigital
+                          ? Icons.account_balance_wallet
+                          : Icons.money,
+                      color: movement.isDigital ? Colors.blue : Colors.green,
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          movement.concept,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          DateFormat('dd/MM/yyyy • HH:mm')
+                              .format(movement.date),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(context).textTheme.bodySmall?.color,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        "\$${_formatoNumero.format(movement.amount)}",
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color:
+                              movement.amount >= 0 ? Colors.green : Colors.red,
+                        ),
+                      ),
+                      if (movement.isDigital)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 2),
+                          child: Icon(Icons.credit_card,
+                              size: 12, color: Colors.grey),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -165,16 +273,14 @@ class _PerfilesDrawer extends StatelessWidget {
               children: [
                 Positioned.fill(
                   child: Image.asset(
-                    'assets/images/rezero 178.jpg',
-                    fit: BoxFit.cover,
+                    'assets/images/rezero 178.jpg', // Usamos una imagen estática que sí existe
+                    fit: BoxFit.cover, // La imagen se ajusta para cubrir
                     alignment: Alignment.center,
                   ),
                 ),
                 Positioned.fill(
                   child: Container(
-                    color: Theme.of(context).brightness == Brightness.dark
-                        ? const Color.fromRGBO(0, 0, 0, 0.55)
-                        : const Color.fromRGBO(255, 255, 255, 0.65),
+                    color: const Color.fromRGBO(0, 0, 0, 0.7),
                   ),
                 ),
                 ListView(
@@ -188,7 +294,7 @@ class _PerfilesDrawer extends StatelessWidget {
                         ),
                         selected: profile == balanceProvider.perfilActual,
                         selectedTileColor:
-                            Theme.of(context).colorScheme.primary.withAlpha(77),
+                            Theme.of(context).colorScheme.primary.withAlpha(90),
                         profile: profile,
                         onTap: () {
                           balanceProvider.cambiarPerfil(profile);
@@ -540,20 +646,46 @@ class _TotalBalanceBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final balanceProvider = Provider.of<BalanceProvider>(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withAlpha(26),
+            blurRadius: 10,
+            offset: const Offset(0, -4),
+          ),
+        ],
+        border: Border(
+          top: BorderSide(
+            color: Colors.grey[800]!,
+            width: 1,
+          ),
+        ),
+      ),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.max,
         children: [
-          const Text("TOTAL",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          const Spacer(),
+          Text(
+            "TOTAL",
+            style: TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.w800,
+              color: Theme.of(context).colorScheme.onSurface.withAlpha(153),
+              letterSpacing: 1.2,
+            ),
+          ),
+          const SizedBox(width: 16),
           Text(
             "\$${_formatoNumero.format(balanceProvider.saldoActual)}",
             softWrap: false,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
+              fontSize: 28,
+              fontWeight: FontWeight.w800,
               color: balanceProvider.currentBalance >= 0
                   ? Colors.green
                   : Colors.red,
@@ -571,10 +703,9 @@ class _ListaMovimientos extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final balanceProvider = Provider.of<BalanceProvider>(context);
-
-    return Expanded(
+    return SizedBox.expand(
       child: Stack(
+        fit: StackFit.expand,
         children: [
           // Imagen de fondo
           Positioned.fill(
@@ -586,128 +717,11 @@ class _ListaMovimientos extends StatelessWidget {
           // Capa semitransparente para mejorar contraste
           Positioned.fill(
             child: Container(
-              color: Theme.of(context).brightness == Brightness.dark
-                  ? const Color.fromRGBO(0, 0, 0, 0.45)
-                  : const Color.fromRGBO(255, 255, 255, 0.35),
+              color: const Color.fromRGBO(0, 0, 0, 0.7),
             ),
           ),
           // Lista de movimientos encima
-          Positioned.fill(
-            child: Builder(
-              builder: (context) {
-                final movimientosList = balanceProvider.movimientos;
-                return ListView.builder(
-                  padding: const EdgeInsets.only(top: 8),
-                  itemCount: movimientosList.length,
-                  itemBuilder: (context, index) {
-                    final movement = movimientosList[index];
-                    return Card(
-                      margin: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 4),
-                      // Hacemos la tarjeta semi-transparente para que se vea
-                      // la imagen de fondo de la lista.
-                      color: Theme.of(context).brightness == Brightness.dark
-                          ? const Color.fromRGBO(0, 0, 0, 0.25)
-                          : const Color.fromRGBO(255, 255, 255, 0.55),
-                      elevation: 1,
-                      child: InkWell(
-                        onLongPress: () =>
-                            _mostrarDialogoEditarMovimiento(context, movement),
-                        child: Padding(
-                          padding: const EdgeInsets.all(8.0),
-                          child: Row(
-                            children: [
-                              // Fecha y tipo de movimiento
-                              Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: (movement.isDigital
-                                          ? Colors.blue
-                                          : Colors.green)
-                                      .withAlpha(balanceProvider.esModoOscuro
-                                          ? 51
-                                          : 26),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Text(
-                                      "${movement.date.day}/${movement.date.month}",
-                                      style: const TextStyle(fontSize: 14),
-                                    ),
-                                    Icon(
-                                      movement.isDigital
-                                          ? Icons.account_balance_wallet
-                                          : Icons.money,
-                                      color: movement.isDigital
-                                          ? Colors.blue
-                                          : Colors.green,
-                                      size: 16,
-                                    ),
-                                    Text(
-                                      movement.isDigital
-                                          ? 'Digital'
-                                          : 'Efectivo',
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        color: movement.isDigital
-                                            ? Colors.blue
-                                            : Colors.green,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 16),
-                              // Concepto y monto
-                              Expanded(
-                                child: Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            movement.concept,
-                                            style: const TextStyle(
-                                                fontSize: 16,
-                                                fontWeight: FontWeight.w500),
-                                          ),
-                                          Text(
-                                            'Mantén presionado para editar',
-                                            style: TextStyle(
-                                                fontSize: 12,
-                                                color: Colors.grey[600]),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    Text(
-                                      "\$${_formatoNumero.format(movement.amount)}",
-                                      style: TextStyle(
-                                          fontSize: 16,
-                                          color: movement.amount >= 0
-                                              ? Colors.green
-                                              : Colors.red,
-                                          fontWeight: FontWeight.bold),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
-          ),
+          const Positioned.fill(child: _MovementsContent()),
         ],
       ),
     );
@@ -732,6 +746,193 @@ void _showLoadingDialog(BuildContext context, String message) {
         ),
       );
     },
+  );
+}
+
+void _mostrarDialogoOpcionesPdf(BuildContext context) {
+  // Estado inicial de las opciones
+  OrdenFecha orden = OrdenFecha.descendente;
+  TipoMovimiento tipoMovimiento = TipoMovimiento.todos;
+  TipoTransaccion tipoTransaccion = TipoTransaccion.todos;
+
+  showDialog(
+    context: context,
+    builder: (context) {
+      return StatefulBuilder(
+        builder: (context, setState) {
+          return AlertDialog(
+            title: const Text('Opciones de Exportación PDF'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 1. Orden por fecha
+                  const Text('Ordenar por fecha:',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  SegmentedButton<OrdenFecha>(
+                    segments: const [
+                      ButtonSegment(
+                          value: OrdenFecha.descendente,
+                          label: Text('Recientes')),
+                      ButtonSegment(
+                          value: OrdenFecha.ascendente,
+                          label: Text('Antiguos')),
+                    ],
+                    selected: {orden},
+                    onSelectionChanged: (newSelection) =>
+                        setState(() => orden = newSelection.first),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 2. Filtrar por tipo de movimiento
+                  const Text('Tipo de movimiento:',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  SegmentedButton<TipoMovimiento>(
+                    segments: const [
+                      ButtonSegment(
+                          value: TipoMovimiento.todos, label: Text('Todos')),
+                      ButtonSegment(
+                          value: TipoMovimiento.efectivo,
+                          label: Text('Efectivo')),
+                      ButtonSegment(
+                          value: TipoMovimiento.digital,
+                          label: Text('Digital')),
+                    ],
+                    selected: {tipoMovimiento},
+                    onSelectionChanged: (newSelection) =>
+                        setState(() => tipoMovimiento = newSelection.first),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 3. Filtrar por ingreso/egreso
+                  const Text('Tipo de transacción:',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  SegmentedButton<TipoTransaccion>(
+                    segments: const [
+                      ButtonSegment(
+                          value: TipoTransaccion.todos, label: Text('Todos')),
+                      ButtonSegment(
+                          value: TipoTransaccion.ingresos,
+                          label: Text('Ingresos')),
+                      ButtonSegment(
+                          value: TipoTransaccion.egresos,
+                          label: Text('Egresos')),
+                    ],
+                    selected: {tipoTransaccion},
+                    onSelectionChanged: (newSelection) =>
+                        setState(() => tipoTransaccion = newSelection.first),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                onPressed: () async {
+                  // Guardamos las referencias que necesitamos del context ANTES del async gap.
+                  final navigator = Navigator.of(context);
+                  final messenger = ScaffoldMessenger.of(context);
+                  final provider =
+                      Provider.of<BalanceProvider>(context, listen: false);
+
+                  // Cerramos el diálogo de opciones primero
+                  navigator.pop();
+
+                  // Usamos un Future.delayed para asegurar que la UI se actualice
+                  // antes de empezar la tarea pesada.
+                  Future.delayed(const Duration(milliseconds: 100), () async {
+                    if (!context.mounted) return;
+                    // Usamos el 'context' principal, no el del navegador que ya se cerró.
+                    _showLoadingDialog(context, "Generando PDF...");
+
+                    String? tempPath;
+                    try {
+                      // 1. Generar el PDF en una ubicación temporal
+                      tempPath = await provider.exportarAPdf(
+                        orden: orden,
+                        tipoMovimiento: tipoMovimiento,
+                        tipoTransaccion: tipoTransaccion,
+                        esTemporal: true, // Nuevo parámetro
+                      );
+
+                      if (!context.mounted) return;
+                      navigator.pop(); // Cierra diálogo de carga
+
+                      // 2. Abrir el PDF para previsualizar
+                      final result = await OpenFile.open(tempPath);
+                      if (result.type != ResultType.done) {
+                        throw Exception(
+                            'No se pudo abrir el archivo: ${result.message}');
+                      }
+
+                      // 3. Mostrar diálogo de confirmación para guardar o descartar
+                      if (!context.mounted) return;
+                      final bool guardar =
+                          await _mostrarDialogoConfirmarGuardado(context) ??
+                              false;
+
+                      if (guardar) {
+                        final finalPath =
+                            await provider.guardarPdfPermanente(tempPath);
+                        messenger.showSnackBar(SnackBar(
+                          content: Text('PDF guardado en: $finalPath'),
+                          duration: const Duration(seconds: 5),
+                        ));
+                      } else {
+                        await provider.descartarPdfTemporal(tempPath);
+                        messenger.showSnackBar(const SnackBar(
+                          content: Text('PDF descartado.'),
+                        ));
+                      }
+                    } catch (e) {
+                      // Limpieza en caso de error
+                      if (tempPath != null) {
+                        await provider.descartarPdfTemporal(tempPath);
+                      }
+                      if (!context.mounted) return;
+                      navigator.pop(); // Cierra diálogo de carga
+                      messenger.showSnackBar(SnackBar(
+                        content: Text('Error al generar PDF: ${e.toString()}'),
+                        backgroundColor: Colors.red,
+                      ));
+                    }
+                  });
+                },
+                child: const Text('Generar PDF'),
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
+}
+
+Future<bool?> _mostrarDialogoConfirmarGuardado(BuildContext context) {
+  return showDialog<bool>(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => AlertDialog(
+      title: const Text('¿Guardar el PDF?'),
+      content: const Text(
+          'Has previsualizado el reporte. ¿Quieres guardarlo permanentemente en tu carpeta de Documentos?'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error),
+          child: const Text('Descartar'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          child: const Text('Guardar'),
+        ),
+      ],
+    ),
   );
 }
 
@@ -865,6 +1066,7 @@ Future<void> _exportarBackup(BuildContext context, String profile) async {
     );
 
     if (outputPath == null) {
+      if (!context.mounted) return;
       messenger.showSnackBar(const SnackBar(
           content: Text(
               'Exportación cancelada. No se seleccionó ninguna carpeta.')));
@@ -873,19 +1075,22 @@ Future<void> _exportarBackup(BuildContext context, String profile) async {
     await bp.establecerRutaDeBackup(outputPath);
   }
 
+  if (!context.mounted) return;
   messenger.showSnackBar(SnackBar(
     content: Text('Generando backup para "$profile"...'),
   ));
 
   try {
-    final path = await bp.exportProfileBackup(profile);
+    await bp.exportProfileBackup(profile);
+    if (!context.mounted) return;
     messenger.showSnackBar(
       SnackBar(
-        content: Text('Backup guardado en: $path'),
+        content: Text('Backup guardado en la carpeta configurada.'),
         duration: const Duration(seconds: 4),
       ),
     );
   } catch (e) {
+    if (!context.mounted) return;
     messenger.showSnackBar(
       SnackBar(
         content: Text('Error al exportar backup: $e'),
@@ -896,15 +1101,14 @@ Future<void> _exportarBackup(BuildContext context, String profile) async {
 }
 
 Future<void> _eliminarPerfil(BuildContext context, String profile) async {
-  // Capturamos el contexto principal de la pantalla de forma segura.
-  final mainScreenContext = context;
-  final messenger = ScaffoldMessenger.of(mainScreenContext);
-  final bp = Provider.of<BalanceProvider>(mainScreenContext, listen: false);
+  final navigator = Navigator.of(context);
+  final messenger = ScaffoldMessenger.of(context);
+  final bp = Provider.of<BalanceProvider>(context, listen: false);
 
-  Navigator.pop(mainScreenContext); // Cierra el drawer
+  if (navigator.canPop()) navigator.pop(); // Cierra el drawer
 
   final result = await showDialog<Map<String, dynamic>>(
-    context: mainScreenContext,
+    context: context,
     builder: (dialogContext) {
       bool shouldExport = true;
       return StatefulBuilder(
@@ -947,31 +1151,33 @@ Future<void> _eliminarPerfil(BuildContext context, String profile) async {
   );
 
   if (result == null || result['confirmed'] != true) return;
-
   final bool doExport = result['export'] == true;
 
   if (doExport) {
     try {
-      final path = await bp.exportProfileBackup(profile);
-      messenger.showSnackBar(SnackBar(
-        content: Text('Backup guardado en: $path'),
-        duration: const Duration(seconds: 4),
-      ));
+      await bp.exportProfileBackup(profile);
+      if (!navigator.mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
+            content: Text('Backup guardado en la carpeta configurada.'),
+            duration: const Duration(seconds: 4)),
+      );
     } catch (e) {
-      messenger.showSnackBar(SnackBar(
-        content: Text('Error al exportar backup: $e. Eliminación abortada.'),
-        backgroundColor: Colors.red,
-      ));
-      return; // Abortar si el backup falla
+      if (!navigator.mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
+            content:
+                Text('Error al exportar backup: $e. Eliminación abortada.'),
+            backgroundColor: Colors.red),
+      );
+      return;
     }
   }
 
   await bp.eliminarPerfil(profile);
 
-  // Si después de eliminar, el perfil actual está vacío (porque era el último),
-  // forzamos la creación de uno nuevo.
-  if (bp.perfilActual.isEmpty && mainScreenContext.mounted) {
-    _mostrarDialogoCrearPerfil(mainScreenContext, canCancel: false);
+  if (bp.perfilActual.isEmpty && navigator.mounted) {
+    _mostrarDialogoCrearPerfil(navigator.context, canCancel: false);
   }
 }
 
@@ -1033,6 +1239,13 @@ void _mostrarDialogoEditarMovimiento(BuildContext context, Movement movement) {
   showDialog(
     context: context,
     builder: (context) {
+      // Listener para habilitar/deshabilitar el botón de guardar
+      void listener() {
+        (context as Element).markNeedsBuild();
+      }
+
+      conceptController.addListener(listener);
+
       return StatefulBuilder(
         builder: (context, setState) {
           Future<void> selectDate() async {
@@ -1046,6 +1259,11 @@ void _mostrarDialogoEditarMovimiento(BuildContext context, Movement movement) {
               setState(() => selectedDate = picked);
             }
           }
+
+          // Al cerrar el diálogo, removemos el listener para evitar memory leaks
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!context.mounted) conceptController.removeListener(listener);
+          });
 
           return AlertDialog(
             title: const Text('Editar movimiento'),
@@ -1105,26 +1323,28 @@ void _mostrarDialogoEditarMovimiento(BuildContext context, Movement movement) {
                 child: const Text('Cancelar'),
               ),
               TextButton(
-                onPressed: () async {
-                  final newAmount = double.tryParse(
-                          amountController.text.replaceAll(',', '.')) ??
-                      movement.amount;
-                  final newConcept = conceptController.text.isEmpty
-                      ? movement.concept
-                      : conceptController.text;
+                onPressed: conceptController.text.trim().isEmpty
+                    ? null // Deshabilita el botón si el concepto está vacío
+                    : () async {
+                        final newAmount = double.tryParse(
+                                amountController.text.replaceAll(',', '.')) ??
+                            movement.amount;
+                        final newConcept = conceptController.text;
 
-                  final newMovement = Movement(
-                      date: selectedDate,
-                      concept: newConcept,
-                      amount: newAmount,
-                      isDigital: isDigital);
+                        final newMovement = Movement.withKey(
+                            date: selectedDate,
+                            concept: newConcept,
+                            amount: newAmount,
+                            isDigital: isDigital);
 
-                  final provider =
-                      Provider.of<BalanceProvider>(context, listen: false);
-                  await provider.editarMovimiento(movement.key, newMovement);
-                  if (!context.mounted) return;
-                  Navigator.pop(context);
-                },
+                        final provider = Provider.of<BalanceProvider>(context,
+                            listen: false);
+                        await provider.editarMovimiento(
+                            movement.key, newMovement);
+
+                        if (!context.mounted) return;
+                        Navigator.pop(context);
+                      },
                 child: const Text('Guardar'),
               ),
               TextButton(
