@@ -146,7 +146,7 @@ class _MovementsContent extends StatelessWidget {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
-          color: Theme.of(context).cardColor.withAlpha(150),
+          color: Colors.black.withAlpha(150),
           child: InkWell(
             borderRadius: BorderRadius.circular(12),
             onLongPress: () =>
