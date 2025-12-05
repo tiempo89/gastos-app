@@ -7,7 +7,7 @@ plugins {
 import java.util.Properties
 
 // Cargamos propiedades del keystore si están disponibles en keystore.properties
-val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystorePropertiesFile = rootProject.file("android/keystore.properties")
 val keystoreProperties = Properties()
 if (keystorePropertiesFile.exists()) {
     keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
