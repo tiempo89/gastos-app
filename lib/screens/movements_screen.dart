@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../providers/balance_provider.dart';
 import 'filter_screen.dart';
+import '../widgets/pdf_edit_preview.dart';
 
 final _formatoNumero = NumberFormat.decimalPattern('es_ES');
 
@@ -51,6 +52,23 @@ class _PantallaMovimientosState extends State<PantallaMovimientos> {
           ],
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.picture_as_pdf),
+            onPressed: () {
+              final provider =
+                  Provider.of<BalanceProvider>(context, listen: false);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => PdfEditPreview(
+                    movements: provider.movimientos,
+                    totalBalance: provider.saldoActual,
+                  ),
+                ),
+              );
+            },
+            tooltip: 'Exportar a PDF',
+          ),
           IconButton(
             icon: const Icon(Icons.filter_list),
             onPressed: () {
