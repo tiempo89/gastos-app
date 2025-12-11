@@ -1,10 +1,10 @@
 name: gastos
 description: Una aplicación para gestionar gastos personales.
-publish_to: 'none'
+publish_to: "none"
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.0.0 <4.0.0'
+  sdk: ">=3.0.0 <4.0.0"
 
 dependencies:
   flutter:
@@ -17,11 +17,11 @@ dependencies:
   hive_flutter: ^1.1.0
   path_provider: ^2.1.5
   pdf: ^3.11.3
-  printing: ^5.10.0
-  flutter_pdfview: ^1.2.4
+  printing: ^5.14.2
+  flutter_pdfview: ^1.4.3
   open_file: ^3.5.10
   intl: ^0.20.2
-  file_picker: ^8.0.6
+  file_picker: ^10.3.7
 
 dev_dependencies:
   flutter_test:
