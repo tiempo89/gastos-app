@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:window_manager/window_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -17,6 +18,43 @@ void main() {
     await Hive.initFlutter();
     Hive.registerAdapter(MovementAdapter());
 
+    // Inicializar WindowManager en plataformas de escritorio
+    if (!kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.linux ||
+            defaultTargetPlatform == TargetPlatform.windows ||
+            defaultTargetPlatform == TargetPlatform.macOS)) {
+      await windowManager.ensureInitialized();
+
+      // Abrir box para configuraciones de ventana
+      final settingsBox = await Hive.openBox('window_settings');
+
+      // Obtener dimensiones guardadas o usar valores por defecto óptimos
+      final double width = settingsBox.get('width', defaultValue: 720.0);
+      final double height = settingsBox.get('height', defaultValue: 1280.0);
+      final double? x = settingsBox.get('x');
+      final double? y = settingsBox.get('y');
+
+      WindowOptions windowOptions = WindowOptions(
+        size: Size(width, height),
+        minimumSize: const Size(480, 820),
+        center: x == null || y == null, // Centrar si no hay posición guardada
+        backgroundColor: Colors.transparent,
+        skipTaskbar: false,
+        titleBarStyle: TitleBarStyle.normal,
+      );
+
+      // Listener para guardar cambios
+      windowManager.addListener(_WindowObserver(settingsBox));
+
+      windowManager.waitUntilReadyToShow(windowOptions, () async {
+        if (x != null && y != null) {
+          await windowManager.setPosition(Offset(x, y));
+        }
+        await windowManager.show();
+        await windowManager.focus();
+      });
+    }
+
     final balanceProvider = BalanceProvider();
 
     runApp(
@@ -32,6 +70,26 @@ void main() {
       debugPrint(stack.toString());
     }
   });
+}
+
+// Clase para escuchar y guardar cambios en la ventana
+class _WindowObserver extends WindowListener {
+  final Box settingsBox;
+  _WindowObserver(this.settingsBox);
+
+  @override
+  void onWindowResize() async {
+    final size = await windowManager.getSize();
+    settingsBox.put('width', size.width);
+    settingsBox.put('height', size.height);
+  }
+
+  @override
+  void onWindowMove() async {
+    final pos = await windowManager.getPosition();
+    settingsBox.put('x', pos.dx);
+    settingsBox.put('y', pos.dy);
+  }
 }
 
 class MiAplicacion extends StatelessWidget {
